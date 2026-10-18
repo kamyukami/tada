@@ -6,28 +6,30 @@ Turn what a photo knows about itself — depth, faces, bodies, colours, metadata
 
 Sister project of [Notus](https://github.com/kamyukami/notus): same screen, same gestures, same single static page.
 
-## Gestures
+## How it works
 
-- Drag vertically (photo or bottom panel): pick an option.
-- Drag horizontally or turn the dial: adjust. Flick to spin the dial.
-- Tap the photo: full screen (pinch to zoom). Long press: show the original.
+- **Transform** (rewrites the pixels) · **Add** (draws on top) · **Export**: each opens a drawer; pick an effect.
+- The drawer closes and the bar becomes **Cancel / Done**. Drag vertically to pick an option, horizontally to set it (0…100, or −100…100). Double tap the value: default. Reset (top): all defaults.
+- **Done** stacks the effect. Effects stack in order, without masks; every analysis always runs on the original photo. Undo / redo / Reset at the top.
+- Tap the photo: full screen (pinch to zoom). Long press: the original.
 
-## Data
+## Analyses
 
-Each layer is computed the first time something needs it, then kept until the next photo. The Data panel shows the layers over the photo (never exported).
+Computed the first time an effect needs them, kept until the next photo.
 
-| Layer | What it is | Model |
-|---|---|---|
-| Depth | 0 far … 1 near, plus normals derived from it | Depth Anything V2 small, int8 (35 MB) |
-| Faces | boxes, 106 landmarks, outline | SCRFD-2.5G + 2d106det (InsightFace) |
-| Bodies | up to 6 people × 17 keypoints | MoveNet MultiPose Lightning (19 MB) |
-| Person | matte of the main subject | u2netp (4.5 MB) |
-| Colours | k-means palette (4, 8, 16) | none |
-| Metadata | camera, lens, exposure, date, GPS | none (EXIF read from the file) |
+| Analysis | Model |
+|---|---|
+| Depth (0 far … 1 near, normals derived) | Depth Anything V2 small, int8 (35 MB) |
+| Faces (boxes, 106 landmarks, outline) | SCRFD-2.5G + 2d106det (InsightFace) |
+| Bodies (6 people × 17 keypoints) | MoveNet MultiPose Lightning (19 MB) |
+| Subject (matte) | u2netp (4.5 MB) |
+| Colours (k-means palette) | — |
+| Metadata (EXIF: camera, lens, exposure, date, GPS) | — |
 
-## Styles
+## Effects
 
-Fog (depth → colour) · Relief (relit from the normals) · Shift (RGB split by depth) · Cutout (background → flat colour or the photo's dominant colour) · Wire (face outlines + skeletons) · Poster (k dominant colours) · Stamp (metadata typeset: caption, film date, frame) · Map (the raw depth / heat / normals / mask).
+- Transform: Fog, Lens, Relief, Shift, Gradient, Cutout, Poster, Depth map, Normal map, Matte.
+- Add: Face outline, Face points, Face boxes, Skeleton, Body boxes, Silhouette, Palette, Caption, Date stamp, Frame.
 
 Exports JPEG or PNG, no EXIF.
 
