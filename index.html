@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610191540">
+<meta name="build" content="202610191610">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -40,6 +40,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 
 .photo{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;padding:8px;touch-action:none;overflow:hidden}
 .photo canvas{display:block;transform-origin:center;will-change:transform}
+.photo #pad{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
 .empty{display:grid;gap:16px;justify-items:center;text-align:center;padding:16px}
 .empty .pick{display:flex;align-items:center;justify-content:center;width:min(80vw,320px);height:64px;background:var(--fg);color:var(--on);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;cursor:pointer}
 .empty p{margin:0;color:var(--muted);font-size:12px;max-width:28em}
@@ -78,7 +79,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 .panel .menu{display:flex;align-items:center;gap:12px;height:48px;margin:0 -16px;padding:0 16px;border-bottom:1px solid var(--bg);font-size:14px;text-transform:uppercase;letter-spacing:.08em;cursor:ns-resize}
 .panel .menu .chev{color:var(--muted);width:16px;letter-spacing:0}
 .panel .menu .hint{margin-left:auto;color:var(--muted);font-size:11px}
-.panel .val{height:64px;display:flex;align-items:center;justify-content:center;gap:24px;font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;cursor:ew-resize}
+.panel .val{height:64px;display:flex;align-items:center;justify-content:center;gap:16px;font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;cursor:ew-resize}
 .panel .val i{font-style:normal;font-size:14px;color:var(--muted);font-weight:400}
 
 .bottom{display:grid;grid-template-columns:repeat(4,1fr);height:48px;background:var(--panel);border-top:1px solid var(--bg);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:content-box}
@@ -119,6 +120,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
       <p class="ver" id="ver1"></p>
     </div>
     <canvas id="view" hidden></canvas>
+    <canvas id="pad" hidden></canvas>
     <div class="tip" id="tip">↕ option · ↔ value</div>
   </div>
 
@@ -166,9 +168,11 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   // has at most one or two options. No mix / opacity here: that is the Layers drawer's job.
   // Every option is a plain number, 0…100 or −100…100; desc (optional) names what a value means.
   const O = (k, label, def, min = 0, desc) => ({ k, label, def, min, max: 100, desc });
+  // XY: two options that belong together, driven by one 2D pad (hold the photo); both axes absolute, shown normalized.
+  const XY = (label, a, b) => ({ xy: true, label, a, b, k: a.k + '+' + b.k });
   const DIRS = ['Down', 'Up', 'Right', 'Left'], dirOf = v => Math.min(3, Math.floor(v / 25));
-  const RANGE = [O('start', 'Depth from', 0), O('end', 'Depth to', 100)];
-  const LINE = (w = 20, l = 100) => [O('w', 'Thickness', w), O('l', 'Lightness', l)];
+  const RANGE = XY('Depth range', O('start', 'From', 0), O('end', 'To', 100));
+  const LINE = (w = 20, l = 100) => XY('Line', O('w', 'Thickness', w), O('l', 'Lightness', l));
   const grey = v => { const g = v.l / 100 * 255; return [g, g, g]; };
   const range01 = (v, d) => { const a = Math.min(v.start, v.end) / 100, b = Math.max(v.start, v.end) / 100; return (d - a) / Math.max(0.001, b - a); };
   const faces = v => L.faces.filter(f => f.box.score >= (v.thr ?? 50) / 100);
@@ -180,7 +184,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   const EFFECTS = [
     // ---------- Transform · depth ----------
     { k: 'orbit', label: 'Orbit', kind: 'T', needs: ['depth'],
-      opts: [O('x', 'Orbit X', 30, -100), O('y', 'Orbit Y', 0, -100), O('depth', 'Depth scale', 50), O('focal', 'Focal', 40), O('density', 'Point density', 70)],
+      opts: [XY('Orbit', O('x', 'X', 30, -100), O('y', 'Y', 0, -100)), XY('Camera', O('focal', 'Focal', 40), O('depth', 'Depth scale', 50)), O('density', 'Point density', 70)],
       run(ctx, v) {   // every pixel back in 3D from the depth, seen from a camera turned around the scene; gaps stay black
         const W = ctx.canvas.width, H = ctx.canvas.height, f = L.depth.near, src = ctx.getImageData(0, 0, W, H).data;
         const im = ctx.createImageData(W, H), od = im.data, zb = new Float32Array(W * H).fill(Infinity);
@@ -197,7 +201,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
         ctx.putImageData(im, 0, 0);
       } },
     { k: 'scan', label: 'Scan', kind: 'T', needs: ['depth'],
-      opts: [...RANGE, O('lines', 'Lines', 20), O('amp', 'Amplitude', 60), O('smooth', 'Smoothing', 20), O('w', 'Thickness', 10)],
+      opts: [RANGE, XY('Lines', O('lines', 'Count', 20), O('amp', 'Amplitude', 60)), O('smooth', 'Smoothing', 20), O('w', 'Thickness', 10)],
       run(ctx, v) {   // horizontal lines lifted by the depth, nearer lines hiding the farther ones; colours from the photo
         const W = ctx.canvas.width, H = ctx.canvas.height, f = smoothDepth(v.smooth), src = ctx.getImageData(0, 0, W, H).data;
         const n = 10 + Math.round(v.lines / 100 * 150), gap = H / (n + 1), amp = v.amp / 100 * H * 0.3, st = Math.max(2, Math.round(W / 400));
@@ -210,12 +214,12 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
         }
       } },
     { k: 'depthsort', label: 'Depth sort', kind: 'T', needs: ['depth'],
-      opts: [O('start', 'Depth from', 40), O('end', 'Depth to', 100), O('dir', 'Direction', 0, 0, v => DIRS[dirOf(v)]), O('min', 'Bright from', 20)],
+      opts: [XY('Depth range', O('start', 'From', 40), O('end', 'To', 100)), O('dir', 'Direction', 0, 0, v => DIRS[dirOf(v)]), O('min', 'Bright from', 20)],
       run(ctx, v) {   // pixel sort, only inside one slice of depth
         const f = L.depth.near, m = v.min / 100 * 255;
         pixels(ctx, (px, n, W, H) => sortRuns(px, W, H, i => { const t = range01(v, f[i]); return t >= 0 && t <= 1; }, dirOf(v.dir), m));
       } },
-    { k: 'lens', label: 'Lens', kind: 'T', needs: ['depth'], opts: [O('focus', 'Focus depth', 50), O('range', 'Depth of field', 20), O('blur', 'Aperture', 50)],
+    { k: 'lens', label: 'Lens', kind: 'T', needs: ['depth'], opts: [XY('Focus', O('focus', 'Focus depth', 50), O('range', 'Depth of field', 20)), O('blur', 'Aperture', 50)],
       run(ctx, v, live) {
         const f = L.depth.near, lv = blurLevels(ctx.canvas, v.blur, live), fo = v.focus / 100, r = v.range / 200;
         pixels(ctx, (px, n) => { for (let i = 0; i < n; i++) {
@@ -224,19 +228,20 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
           for (let k = 0; k < 3; k++) { const j = i * 4 + k, va = A ? A[j] : px[j]; px[j] = va + (B[j] - va) * w; }
         } });
       } },
-    { k: 'relight', label: 'Relight', kind: 'T', needs: ['depth'], opts: [O('angle', 'Light angle', 87), O('height', 'Light height', 40), O('scale', 'Depth scale', 50), O('smooth', 'Smoothing', 20), O('amount', 'Strength', 60)],
+    { k: 'relight', label: 'Relight', kind: 'T', needs: ['depth'], opts: [XY('Light', O('lx', 'Left / right', -50, -100), O('ly', 'Down / up', 50, -100)), XY('Surface', O('scale', 'Depth scale', 50), O('smooth', 'Smoothing', 20)), O('amount', 'Strength', 60)],
       run(ctx, v) {
-        const N = normals(v.scale, v.smooth), a = v.angle / 100 * Math.PI * 2, e = (10 + 70 * v.height / 100) * Math.PI / 180;
-        const Lx = Math.cos(a) * Math.cos(e), Ly = -Math.sin(a) * Math.cos(e), Lz = Math.sin(e), k = v.amount / 100 * 3;
+        const N = normals(v.scale, v.smooth), r = Math.min(1, Math.hypot(v.lx, v.ly) / 100), e = (90 - 80 * r) * Math.PI / 180, dx = r ? v.lx / 100 / r : 0, dy = r ? v.ly / 100 / r : 0;
+        // the pad is the light seen from above the photo: centre = overhead, edge = grazing; up = from the top of the image
+        const Lx = Math.cos(e) * dx, Ly = -Math.cos(e) * dy, Lz = Math.sin(e), k = v.amount / 100 * 3;
         pixels(ctx, (px, n) => { for (let i = 0; i < n; i++) { const s = Math.max(0, 1 + k * (N.nx[i] * Lx + N.ny[i] * Ly + N.nz[i] * Lz - Lz)); px[i * 4] *= s; px[i * 4 + 1] *= s; px[i * 4 + 2] *= s; } });
       } },
-    { k: 'depthmap', label: 'Depth map', kind: 'T', needs: ['depth'], opts: [...RANGE, O('smooth', 'Smoothing', 0)],
+    { k: 'depthmap', label: 'Depth map', kind: 'T', needs: ['depth'], opts: [RANGE, O('smooth', 'Smoothing', 0)],
       run(ctx, v) { const f = smoothDepth(v.smooth); pixels(ctx, (px, n) => { for (let i = 0; i < n; i++) { const g = clamp(range01(v, f[i]), 0, 1) * 255; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = g; } }); } },
-    { k: 'normalmap', label: 'Normal map', kind: 'T', needs: ['depth'], opts: [O('scale', 'Depth scale', 50), O('smooth', 'Smoothing', 20)],
+    { k: 'normalmap', label: 'Normal map', kind: 'T', needs: ['depth'], opts: [XY('Surface', O('scale', 'Depth scale', 50), O('smooth', 'Smoothing', 20))],
       run(ctx, v) { const N = normals(v.scale, v.smooth); pixels(ctx, (px, n) => { for (let i = 0; i < n; i++) { px[i * 4] = (N.nx[i] * 0.5 + 0.5) * 255; px[i * 4 + 1] = (N.ny[i] * -0.5 + 0.5) * 255; px[i * 4 + 2] = N.nz[i] * 255; } }); } },
 
     // ---------- Transform · faces, bodies ----------
-    { k: 'mesh', label: 'Mesh', kind: 'T', needs: ['faces'], opts: [O('thr', 'Detection', 50), O('pts', 'Point density', 60), O('margin', 'Margin', 30), O('edge', 'Edges', 0)],
+    { k: 'mesh', label: 'Mesh', kind: 'T', needs: ['faces'], opts: [O('thr', 'Detection', 50), XY('Mesh', O('pts', 'Point density', 60), O('margin', 'Margin', 30)), O('edge', 'Edges', 0)],
       run(ctx, v) {   // landmarks triangulated, each triangle filled with the photo's colour under it
         const W = ctx.canvas.width, H = ctx.canvas.height, src = ctx.getImageData(0, 0, W, H).data, keep = Math.max(1, Math.round(1 + (100 - v.pts) / 100 * 7));
         const at = (x, y) => { const j = (clamp(y | 0, 0, H - 1) * W + clamp(x | 0, 0, W - 1)) * 4; return [src[j], src[j + 1], src[j + 2]]; };
@@ -251,7 +256,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
           }
         }
       } },
-    { k: 'warp', label: 'Warp', kind: 'T', needs: ['faces'], opts: [O('thr', 'Detection', 50), O('eyes', 'Eyes', 40, -100), O('mouth', 'Mouth', 0, -100), O('nose', 'Nose', 0, -100), O('face', 'Head', 0, -100)],
+    { k: 'warp', label: 'Warp', kind: 'T', needs: ['faces'], opts: [O('thr', 'Detection', 50), XY('Eyes · mouth', O('eyes', 'Eyes', 40, -100), O('mouth', 'Mouth', 0, -100)), XY('Nose · head', O('nose', 'Nose', 0, -100), O('face', 'Head', 0, -100))],
       run(ctx, v) {   // liquify driven by the landmarks: each feature swells (+) or shrinks (−) around its own centre
         pixels(ctx, (px, n, W, H) => {
           const src = px.slice();
@@ -273,7 +278,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
           }
         });
       } },
-    { k: 'smear', label: 'Smear', kind: 'T', needs: ['pose'], opts: [O('person', 'Detection', 20), O('conf', 'Joint confidence', 30), O('len', 'Length', 40, -100), O('width', 'Limb width', 40)],
+    { k: 'smear', label: 'Smear', kind: 'T', needs: ['pose'], opts: [XY('Detection', O('person', 'Body', 20), O('conf', 'Joints', 30)), XY('Smear', O('len', 'Length', 40, -100), O('width', 'Limb width', 40))],
       run(ctx, v) {   // each limb's pixels dragged along its bone, outward (+) or inward (−)
         const W = ctx.canvas.width, H = ctx.canvas.height, src = resized(ctx.canvas, W, H), c = v.conf / 100, N = 18;
         for (const p of people(v)) for (const [a, b] of BONES) {
@@ -290,14 +295,14 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       } },
 
     // ---------- Transform · subject, colours ----------
-    { k: 'sort', label: 'Sort', kind: 'T', needs: ['mask'], opts: [O('thr', 'Subject threshold', 50), O('side', 'Sorted part', 100, 0, v => v < 50 ? 'Subject' : 'Background'), O('dir', 'Direction', 0, 0, v => DIRS[dirOf(v)]), O('min', 'Bright from', 20)],
+    { k: 'sort', label: 'Sort', kind: 'T', needs: ['mask'], opts: [XY('Mask', O('thr', 'Subject threshold', 50), O('min', 'Bright from', 20)), O('side', 'Sorted part', 100, 0, v => v < 50 ? 'Subject' : 'Background'), O('dir', 'Direction', 0, 0, v => DIRS[dirOf(v)])],
       run(ctx, v) {
         const m = L.mask, t = v.thr / 100, inside = v.side < 50, b = v.min / 100 * 255;
         pixels(ctx, (px, n, W, H) => sortRuns(px, W, H, i => (m[i] > t) === inside, dirOf(v.dir), b));
       } },
-    { k: 'matte', label: 'Matte', kind: 'T', needs: ['mask'], opts: [O('thr', 'Threshold', 50), O('soft', 'Softness', 100)],
+    { k: 'matte', label: 'Matte', kind: 'T', needs: ['mask'], opts: [XY('Matte', O('thr', 'Threshold', 50), O('soft', 'Softness', 100))],
       run(ctx, v) { const M = L.mask, t = v.thr / 100, s = Math.max(0.01, v.soft / 100); pixels(ctx, (px, n) => { for (let i = 0; i < n; i++) { const g = smooth(t - s / 2, t + s / 2, M[i]) * 255; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = g; } }); } },
-    { k: 'isolate', label: 'Isolate', kind: 'T', needs: ['colours'], opts: [O('n', 'Colours', 30), O('which', 'Kept colour', 0), O('tol', 'Tolerance', 30)],
+    { k: 'isolate', label: 'Isolate', kind: 'T', needs: ['colours'], opts: [XY('Palette', O('n', 'Colours', 30), O('which', 'Kept colour', 0)), O('tol', 'Tolerance', 30)],
       run(ctx, v) {   // one of the photo's dominant colours stays, the rest goes grey
         const k = 2 + Math.round(v.n / 100 * 10), A = assign(k), j0 = Math.min(k - 1, Math.floor(v.which / 100 * k)), C = A.centres, bp = basePx(), tol = 1 + v.tol / 100 * 2;
         pixels(ctx, (px, n) => { for (let i = 0; i < n; i++) {
@@ -306,26 +311,26 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
           const g = px[q] * 0.299 + px[q + 1] * 0.587 + px[q + 2] * 0.114; px[q] += (g - px[q]) * (1 - w); px[q + 1] += (g - px[q + 1]) * (1 - w); px[q + 2] += (g - px[q + 2]) * (1 - w);
         } });
       } },
-    { k: 'swap', label: 'Swap', kind: 'T', needs: ['colours'], opts: [O('n', 'Colours', 30), O('shift', 'Shift', 30)],
+    { k: 'swap', label: 'Swap', kind: 'T', needs: ['colours'], opts: [XY('Palette', O('n', 'Colours', 30), O('shift', 'Shift', 30))],
       run(ctx, v) {   // each region of the photo takes the colour of another dominant colour, keeping its own detail
         const k = 2 + Math.round(v.n / 100 * 10), A = assign(k), C = A.centres, s = 1 + Math.floor(v.shift / 100 * (k - 1)) % k;
         pixels(ctx, (px, n) => { for (let i = 0; i < n; i++) { const j = A.idx[i], a = C[j], b = C[(j + s) % k], q = i * 4; px[q] += b[0] - a[0]; px[q + 1] += b[1] - a[1]; px[q + 2] += b[2] - a[2]; } });
       } },
 
     // ---------- Add ----------
-    { k: 'slices', label: 'Slices', kind: 'A', needs: ['depth'], opts: [...RANGE, O('n', 'Slices', 30), O('smooth', 'Smoothing', 30), ...LINE(15)],
+    { k: 'slices', label: 'Slices', kind: 'A', needs: ['depth'], opts: [RANGE, XY('Slices', O('n', 'Count', 30), O('smooth', 'Smoothing', 30)), LINE(15)],
       run(ctx, v) {   // contour lines of the depth, like a topographic map
         const W = ctx.canvas.width, H = ctx.canvas.height, f = smoothDepth(v.smooth), n = 2 + Math.round(v.n / 100 * 78), band = new Int16Array(W * H);
         for (let i = 0; i < W * H; i++) { const t = range01(v, f[i]); band[i] = t < 0 || t > 1 ? -1 : Math.min(n - 1, Math.floor(t * n)); }
         drawEdges(ctx, band, W, H, px1(ctx) * (0.5 + v.w / 100 * 8), grey(v));
       } },
-    { k: 'echo', label: 'Echo', kind: 'A', needs: ['mask'], opts: [O('thr', 'Subject threshold', 50), O('rings', 'Rings', 15), O('gap', 'Spacing', 30), ...LINE(15)],
+    { k: 'echo', label: 'Echo', kind: 'A', needs: ['mask'], opts: [O('thr', 'Subject threshold', 50), XY('Rings', O('rings', 'Count', 15), O('gap', 'Spacing', 30)), LINE(15)],
       run(ctx, v) {   // rings at equal distance around the subject
         const W = ctx.canvas.width, H = ctx.canvas.height, D = maskDistance(v.thr), n = 1 + Math.round(v.rings / 100 * 40), g = W * (0.004 + v.gap / 100 * 0.05), band = new Int16Array(W * H);
         for (let i = 0; i < W * H; i++) { const b = Math.floor(D[i] / g); band[i] = D[i] <= 0 ? -1 : b < n ? b : -2; }
         drawEdges(ctx, band, W, H, px1(ctx) * (0.5 + v.w / 100 * 8), grey(v), -2);
       } },
-    { k: 'graph', label: 'Graph', kind: 'A', needs: ['faces', 'pose'], opts: [O('thr', 'Face detection', 50), O('person', 'Body detection', 20), O('dist', 'Max distance', 60), O('links', 'Links each', 30), ...LINE(15)],
+    { k: 'graph', label: 'Graph', kind: 'A', needs: ['faces', 'pose'], opts: [XY('Detection', O('thr', 'Faces', 50), O('person', 'Bodies', 20)), XY('Links', O('dist', 'Max distance', 60), O('links', 'Per node', 30)), LINE(15)],
       run(ctx, v) {   // who is near whom: faces and bodies as nodes, each linked to its nearest neighbours
         const W = ctx.canvas.width, H = ctx.canvas.height, nodes = [];
         for (const f of faces(v)) nodes.push({ x: (f.box.x1 + f.box.x2) / 2, y: (f.box.y1 + f.box.y2) / 2 });
@@ -341,9 +346,9 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
         });
         const s = lw * 4; for (const a of nodes) ctx.fillRect(a.x - s / 2, a.y - s / 2, s, s);
       } },
-    { k: 'faceline', label: 'Face outline', kind: 'A', needs: ['faces'], opts: [O('thr', 'Detection', 50), O('margin', 'Margin', 30), ...LINE(30)],
+    { k: 'faceline', label: 'Face outline', kind: 'A', needs: ['faces'], opts: [O('thr', 'Detection', 50), O('margin', 'Margin', 30), LINE(30)],
       run(ctx, v) { line(ctx, v); for (const f of faces(v)) { trace(ctx, scalePoly(f.poly, 0.7 + v.margin / 100)); ctx.stroke(); } } },
-    { k: 'skeleton', label: 'Skeleton', kind: 'A', needs: ['pose'], opts: [O('person', 'Detection', 20), O('conf', 'Joint confidence', 30), O('j', 'Joints', 40), ...LINE(40)],
+    { k: 'skeleton', label: 'Skeleton', kind: 'A', needs: ['pose'], opts: [XY('Detection', O('person', 'Body', 20), O('conf', 'Joints', 30)), O('j', 'Joint size', 40), LINE(40)],
       run(ctx, v) {
         line(ctx, v); const c = v.conf / 100, r = v.j ? px1(ctx) * (1 + v.j / 100 * 12) : 0;
         for (const p of people(v)) {
@@ -351,14 +356,14 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
           if (r) for (const k of p.kps) if (k.s >= c) dot(ctx, k.x, k.y, r);
         }
       } },
-    { k: 'caption', label: 'Caption', kind: 'A', needs: ['exif'], opts: [O('size', 'Size', 30), O('pos', 'Position', 0)],
+    { k: 'caption', label: 'Caption', kind: 'A', needs: ['exif'], opts: [XY('Caption', O('size', 'Size', 30), O('pos', 'Position', 0))],
       run(ctx, v) {
         const W = ctx.canvas.width, H = ctx.canvas.height, fs = Math.max(10, W / 120 * (1 + v.size / 100 * 4)), h = fs * 2.4, y = (H - h) * (1 - v.pos / 100);
         ctx.fillStyle = '#111'; ctx.fillRect(0, y, W, h);
         ctx.fillStyle = '#f2f2f2'; ctx.font = `${fs}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillText(exifLines(L.exif).join('  ·  '), fs, y + h / 2, W - fs * 2);
       } },
-    { k: 'frame', label: 'Frame', kind: 'A', needs: ['exif'], opts: [O('border', 'Border', 30), O('text', 'Text size', 30)],
+    { k: 'frame', label: 'Frame', kind: 'A', needs: ['exif'], opts: [XY('Frame', O('border', 'Border', 30), O('text', 'Text size', 30))],
       run(ctx, v) {
         const W = ctx.canvas.width, H = ctx.canvas.height, b = Math.round(W * (0.005 + v.border / 100 * 0.1)), L2 = v.text ? exifLines(L.exif) : [];
         const fs = Math.max(8, W / 140 * (1 + v.text / 100 * 3)), bb = b + (L2.length ? fs * (L2.length + 1) : 0);
@@ -453,7 +458,8 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   }
   const FX = Object.fromEntries(EFFECTS.map(e => [e.k, e]));
   const FONT = getComputedStyle(document.body).fontFamily;
-  const defaults = e => Object.fromEntries(e.opts.map(o => [o.k, o.def]));
+  const flat = e => e.opts.flatMap(o => o.xy ? [o.a, o.b] : [o]);
+  const defaults = e => Object.fromEntries(flat(e).map(o => [o.k, o.def]));
 
   // ---------- small maths ----------
   const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
@@ -703,8 +709,8 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 
   // ================= state =================
   // stack: the validated effects, in order. edit: the effect being set up (not in the stack yet). params: last values used per effect.
-  const loadParams = () => { try { return JSON.parse(localStorage.getItem('tada-params-2') || '{}'); } catch { return {}; } };
-  const saveParams = () => { try { localStorage.setItem('tada-params-2', JSON.stringify(params)); } catch {} };
+  const loadParams = () => { try { return JSON.parse(localStorage.getItem('tada-params-3') || '{}'); } catch { return {}; } };
+  const saveParams = () => { try { localStorage.setItem('tada-params-3', JSON.stringify(params)); } catch {} };
   let params = loadParams(), stack = [], hist = [[]], hi = 0, edit = null, drawer = null, full = false;
 
   function commit() { hist = hist.slice(0, hi + 1); hist.push(stack.map(e => ({ ...e, v: { ...e.v } }))); hi = hist.length - 1; ui(); }
@@ -773,8 +779,15 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     activity();
   }
   const opt = () => FX[edit.k].opts[edit.i];
+  const norm = v => (v < 0 ? '−' : '') + (Math.abs(v) / 100).toFixed(2);
   function panel() {
-    const o = opt(), v = edit.v[o.k];
+    const o = opt();
+    if (o.xy) {
+      $('optName').textContent = o.label; $('optHint').textContent = `${o.a.label} × ${o.b.label}`;
+      $('optVal').innerHTML = `<i>X</i><span>${norm(edit.v[o.a.k])}</span><i>Y</i><span>${norm(edit.v[o.b.k])}</span>`;
+      return;
+    }
+    const v = edit.v[o.k];
     $('optName').textContent = o.label; $('optHint').textContent = o.desc ? o.desc(v) : `${edit.i + 1}/${FX[edit.k].opts.length}`;
     $('optVal').innerHTML = `<i>${o.min}</i><span>${v > 0 && o.min < 0 ? '+' : ''}${v}</span><i>${o.max}</i>`;
   }
@@ -793,7 +806,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
         `<button type="button" class="up" ${i === stack.length - 1 ? 'disabled' : ''}>↑</button><button type="button" class="dn" ${i === 0 ? 'disabled' : ''}>↓</button><button type="button" class="rm">×</button>`;
       const q = s => row.querySelector(s);
       q('.nm').addEventListener('click', () => enterEdit(e.k, i));
-      // Blend mode: press shows the list of modes on the row, slide up/down through it (live), release keeps it. A plain tap = next mode.
+      // Blend mode: press shows the list of modes on the row, slide up/down through it, release applies it. A plain tap = next mode.
       const md = q('.md'); let w = null;
       const mi = () => Math.max(0, MODES.findIndex(x => x[0] === (e.mode || 'source-over')));
       md.addEventListener('pointerdown', ev => { ev.preventDefault(); md.setPointerCapture(ev.pointerId); w = { y: ev.clientY, i0: mi(), id: ev.pointerId, moved: false, m0: e.mode }; });
@@ -802,7 +815,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
         const dy = ev.clientY - w.y; if (!w.moved && Math.abs(dy) < 6) return;
         if (!w.moved) { w.moved = true; modeWheel(md, w.i0); }
         const i = clamp(w.i0 - Math.round(dy / ROW), 0, MODES.length - 1);   // the list follows the finger
-        if (i !== mi()) { e.mode = MODES[i][0]; md.textContent = MODES[i][1]; hap(); modeWheel(md, i); scheduleStack(); }
+        if (i !== mi()) { e.mode = MODES[i][0]; md.textContent = MODES[i][1]; hap(); modeWheel(md, i); }   // applied on release (no re-render while sliding)
       });
       const mup = ev => {
         if (!w || ev.pointerId !== w.id) return;
@@ -888,7 +901,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   function showWheel(i) {
     const wh = $('wheel'), items = $('wheelItems'), r = $('optMenu').getBoundingClientRect(), opts = FX[edit.k].opts;
     items.textContent = '';
-    opts.forEach((o, j) => { const d = document.createElement('div'); d.className = j === i ? 'cur' : ''; d.innerHTML = `<span>${o.label}</span><b>${o.desc ? o.desc(edit.v[o.k]) : edit.v[o.k]}</b>`; items.append(d); });
+    opts.forEach((o, j) => { const d = document.createElement('div'); d.className = j === i ? 'cur' : ''; d.innerHTML = `<span>${o.label}</span><b>${o.xy ? norm(edit.v[o.a.k]) + ' · ' + norm(edit.v[o.b.k]) : o.desc ? o.desc(edit.v[o.k]) : edit.v[o.k]}</b>`; items.append(d); });
     const top = r.top + (r.height - ROW) / 2 - i * ROW, h = opts.length * ROW;
     wh.style.setProperty('--y', Math.max(8, Math.min(top, innerHeight - h - 8)) + 'px');
     wh.style.setProperty('--x', r.left + 'px'); wh.style.setProperty('--w', r.width + 'px');
@@ -938,6 +951,53 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 
   // Photo and edit panel: vertical drag = pick an option (wheel), horizontal drag = set its value.
   // Photo: tap = full view (or closes an open drawer), long press = the original photo. Double tap on the value = default.
+  // ---------- 2D pad ----------
+  // A see-through grid over the photo: X left → right, Y bottom → top, both absolute over the whole range;
+  // axes through zero when a range has negatives; values shown normalized (0…1 or −1…1).
+  const PAD = 28;
+  function padBox() { const r = $('photoArea').getBoundingClientRect(); return { x: r.left + PAD, y: r.top + PAD, w: r.width - PAD * 2, h: r.height - PAD * 2 }; }
+  function setXY(o, x, y) {
+    const a = Math.round(clamp(x, o.a.min, o.a.max)), b = Math.round(clamp(y, o.b.min, o.b.max));
+    if (a === edit.v[o.a.k] && b === edit.v[o.b.k]) return;
+    const step = (p, q) => Math.floor(p / 10) !== Math.floor(q / 10);
+    if (step(a, edit.v[o.a.k]) || step(b, edit.v[o.b.k])) hap();
+    edit.v[o.a.k] = a; edit.v[o.b.k] = b; panel(); schedule(); if (!$('pad').hidden) drawPad();
+  }
+  function padAt(cx, cy) {
+    const o = opt(), B = padBox();
+    setXY(o, o.a.min + clamp((cx - B.x) / B.w, 0, 1) * (o.a.max - o.a.min), o.b.min + clamp((B.y + B.h - cy) / B.h, 0, 1) * (o.b.max - o.b.min));
+  }
+  function showPad() { $('pad').hidden = false; drawPad(); }
+  function hidePad() { $('pad').hidden = true; }
+  function drawPad() {
+    const c = $('pad'), a = $('photoArea'), dpr = devicePixelRatio || 1, W = a.clientWidth, H = a.clientHeight;
+    if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+    const ctx = c.getContext('2d'), o = opt(), x0 = PAD, y0 = PAD, w = W - PAD * 2, h = H - PAD * 2;
+    const X = v => x0 + (v - o.a.min) / (o.a.max - o.a.min) * w, Y = v => y0 + h - (v - o.b.min) / (o.b.max - o.b.min) * h;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(17,17,17,.55)'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(242,242,242,.18)'; ctx.lineWidth = 1;
+    for (let k = 0; k <= 10; k++) {
+      const gx = x0 + w * k / 10 + .5, gy = y0 + h * k / 10 + .5;
+      ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + h); ctx.moveTo(x0, gy); ctx.lineTo(x0 + w, gy); ctx.stroke();
+    }
+    // axes: through zero if the range crosses it, otherwise along the low edges
+    const ax = X(clamp(0, o.a.min, o.a.max)), ay = Y(clamp(0, o.b.min, o.b.max));
+    ctx.strokeStyle = 'rgba(242,242,242,.8)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x0, ay); ctx.lineTo(x0 + w, ay); ctx.moveTo(ax, y0); ctx.lineTo(ax, y0 + h); ctx.stroke();
+    ctx.fillStyle = 'rgba(242,242,242,.9)'; ctx.font = `11px ${FONT}`;
+    ctx.textBaseline = 'top'; ctx.textAlign = 'right'; ctx.fillText(`${o.a.label.toUpperCase()} → ${norm(o.a.max)}`, x0 + w, ay + 6);
+    ctx.textAlign = 'left'; ctx.fillText(norm(o.a.min), x0, ay + 6);
+    ctx.textBaseline = 'bottom'; ctx.fillText(`↑ ${o.b.label.toUpperCase()} ${norm(o.b.max)}`, ax + 6, y0 - 4);
+    ctx.textBaseline = 'top'; ctx.fillText(norm(o.b.min), ax + 6, y0 + h + 4);
+    // the point
+    const px = X(edit.v[o.a.k]), py = Y(edit.v[o.b.k]);
+    ctx.strokeStyle = 'rgba(242,242,242,.5)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(px, y0); ctx.lineTo(px, y0 + h); ctx.moveTo(x0, py); ctx.lineTo(x0 + w, py); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#f2f2f2'; ctx.fillRect(px - 8, py - 8, 16, 16); ctx.fillStyle = '#111'; ctx.fillRect(px - 4, py - 4, 8, 8);
+    ctx.fillStyle = '#f2f2f2'; ctx.font = `bold 13px ${FONT}`; ctx.textBaseline = 'bottom'; ctx.textAlign = px > x0 + w - 120 ? 'right' : 'left';
+    ctx.fillText(`${norm(edit.v[o.a.k])} · ${norm(edit.v[o.b.k])}`, px + (ctx.textAlign === 'right' ? -14 : 14), py - 10);
+  }
   function gestures() {
     let g = null, lastTap = 0;
     const begin = (e, where) => {
@@ -946,13 +1006,28 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       if (e.target.closest('button')) return;
       e.preventDefault(); activity();
       g = { x: e.clientX, y: e.clientY, axis: null, where, id: e.pointerId, w: $('photoArea').clientWidth };
-      if (edit) { const o = opt(); g.v0 = edit.v[o.k]; g.i0 = edit.i; if (e.target.closest('.menu')) { g.axis = 'y'; showWheel(edit.i); } }
-      if (where === 'photo' && !drawer) g.hold = setTimeout(() => { if (g && !g.axis) { g.peek = true; peek(true); } }, 350);
+      g.cx = e.clientX; g.cy = e.clientY;
+      if (edit) {
+        const o = opt(); g.v0 = o.xy ? edit.v[o.a.k] : edit.v[o.k]; g.w0 = o.xy ? edit.v[o.b.k] : 0; g.i0 = edit.i;
+        if (e.target.closest('.menu')) { g.axis = 'y'; showWheel(edit.i); }
+        else if (o.xy && e.target.closest('.val')) g.axis = 'xy';   // the value zone of a pair: drag in 2D
+      }
+      // Hold the photo: the 2D pad of the current pair (absolute), or the original photo for a single option.
+      if (where === 'photo' && !drawer) g.hold = setTimeout(() => {
+        if (!g || g.axis) return;
+        if (edit && opt().xy) { g.axis = 'pad'; showPad(); padAt(g.cx, g.cy); hap(); }
+        else { g.peek = true; peek(true); }
+      }, 300);
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     };
     const move = e => {
       if (!g || e.pointerId !== g.id) return;
-      const dx = e.clientX - g.x;
+      const dx = e.clientX - g.x; g.cx = e.clientX; g.cy = e.clientY;
+      if (g.axis === 'pad') { padAt(e.clientX, e.clientY); return; }
+      if (g.axis === 'xy') {
+        const o = opt(), sx = (o.a.max - o.a.min) / 260, sy = (o.b.max - o.b.min) / 260;
+        setXY(o, g.v0 + dx * sx, g.w0 - (e.clientY - g.y) * sy); return;
+      }
       if (!g.axis) {
         const dy0 = e.clientY - g.y;
         if (Math.abs(dx) < 6 && Math.abs(dy0) < 6) return;
@@ -962,8 +1037,8 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       }
       if (!edit || g.axis === 'none') return;
       if (g.axis === 'x') {
-        const o = opt(), v = Math.round(clamp(g.v0 + dx / g.w * 1.1 * (o.max - o.min), o.min, o.max));
-        if (v !== edit.v[o.k]) { const before = edit.v[o.k]; edit.v[o.k] = v; if (Math.floor(v / 5) !== Math.floor(before / 5) || v === o.min || v === o.max || v === 0) hap(); panel(); schedule(); }
+        const o0 = opt(), o = o0.xy ? o0.a : o0, v = Math.round(clamp(g.v0 + dx / g.w * 1.1 * (o.max - o.min), o.min, o.max));
+        if (v !== edit.v[o.k]) { const before = edit.v[o.k]; edit.v[o.k] = v; if (Math.floor(v / 5) !== Math.floor(before / 5) || v === o.min || v === o.max || v === 0) hap(); panel(); schedule(); if (o0.xy && !$('pad').hidden) drawPad(); }
       } else {
         const n = FX[edit.k].opts.length, i = clamp(g.i0 - Math.round((e.clientY - g.y) / ROW), 0, n - 1);
         if (i !== edit.i) { edit.i = i; hap(); panel(); showWheel(i); }
@@ -971,13 +1046,13 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     };
     const end = e => {
       if (!g || e.pointerId !== g.id) return;
-      hideWheel(); activity(); clearTimeout(g.hold);
+      hideWheel(); hidePad(); activity(); clearTimeout(g.hold);
       const tap = !g.axis && e.type === 'pointerup';
       if (g.peek) peek(false);
       else if (tap && g.where === 'photo') { if (drawer) openDrawer(drawer); else toggleFull(); }
       else if (tap && g.where === 'panel' && edit && e.target.closest('.val')) {
         const now = performance.now();
-        if (now - lastTap < 320) { const o = opt(); edit.v[o.k] = o.def; hap(); panel(); schedule(); lastTap = 0; } else lastTap = now;
+        if (now - lastTap < 320) { const o = opt(); for (const q of o.xy ? [o.a, o.b] : [o]) edit.v[q.k] = q.def; hap(); panel(); schedule(); lastTap = 0; } else lastTap = now;
       }
       g = null;
     };
@@ -1054,7 +1129,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 
   const BUILD = document.querySelector('meta[name="build"]').content;
   // Version shown on the landing page and in Export. Bump VERSION by one at every published update.
-  const VERSION = 12;
+  const VERSION = 13;
   for (const id of ['ver1', 'ver2']) $(id).textContent = `v${VERSION}`;
   async function checkUpdate() {
     try {
