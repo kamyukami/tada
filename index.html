@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610191530">
+<meta name="build" content="202610191525">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -70,6 +70,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 .drawer .fmt{display:flex;height:48px;margin-bottom:8px}
 .drawer .fmt button{flex:1;color:var(--muted);font-size:14px;letter-spacing:.08em;text-transform:uppercase}
 .drawer .fmt button[aria-pressed="true"]{color:var(--fg);box-shadow:inset 0 -2px 0 var(--fg)}
+.ver{color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase;text-align:center;margin-top:8px}
 .drawer .go{width:100%;height:56px;background:var(--fg);color:var(--on);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.1em}
 
 /* edit panel: the option name (vertical drag picks another), the value (horizontal drag adjusts) */
@@ -115,6 +116,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
     <div class="empty" id="empty">
       <label class="pick" for="file" id="pickText">Choose a photo</label>
       <p id="pickMsg">Turn what a photo knows about itself — depth, faces, bodies, colours, metadata — into images. Nothing is sent; everything runs on this device.</p>
+      <p class="ver" id="ver1"></p>
     </div>
     <canvas id="view" hidden></canvas>
     <div class="tip" id="tip">↕ option · ↔ value</div>
@@ -126,6 +128,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
   <div class="drawer" id="drExport" hidden>
     <div class="fmt"><button type="button" data-fmt="jpeg" aria-pressed="true">JPEG</button><button type="button" data-fmt="png" aria-pressed="false">PNG</button></div>
     <button type="button" class="go" id="save">Save</button>
+    <div class="ver" id="ver2"></div>
   </div>
 
   <div class="panel" id="panel" hidden>
@@ -1050,6 +1053,8 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   });
 
   const BUILD = document.querySelector('meta[name="build"]').content;
+  // Version shown on the landing page and in Export: v + build date and time (YYYYMMDD HHMM).
+  for (const id of ['ver1', 'ver2']) $(id).textContent = `Tada v${BUILD.slice(0, 8)}.${BUILD.slice(8, 12)}`;
   async function checkUpdate() {
     try {
       const t = await (await fetch('./?check=' + Date.now(), { cache: 'no-store' })).text(), m = t.match(/name="build" content="([^"]+)"/);
