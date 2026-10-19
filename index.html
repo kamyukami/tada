@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610191535">
+<meta name="build" content="202610191540">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1053,8 +1053,9 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   });
 
   const BUILD = document.querySelector('meta[name="build"]').content;
-  // Version shown on the landing page and in Export: v + build date and time (YYYYMMDD HHMM).
-  for (const id of ['ver1', 'ver2']) $(id).textContent = `Tada v${BUILD.slice(0, 8)}.${BUILD.slice(8, 12)}`;
+  // Version shown on the landing page and in Export. Bump VERSION by one at every published update.
+  const VERSION = 12;
+  for (const id of ['ver1', 'ver2']) $(id).textContent = `v${VERSION}`;
   async function checkUpdate() {
     try {
       const t = await (await fetch('./?check=' + Date.now(), { cache: 'no-store' })).text(), m = t.match(/name="build" content="([^"]+)"/);
