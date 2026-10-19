@@ -28,8 +28,10 @@ Computed the first time an effect needs them, kept until the next photo.
 
 ## Effects
 
-- Transform: Fog, Lens, Relief, Shift, Gradient, Cutout, Poster, Depth map, Normal map, Matte.
-- Add: Face outline, Face points, Face boxes, Skeleton, Body boxes, Silhouette, Palette, Caption, Date stamp, Frame.
+The options set the data behind each effect (depth range, detection thresholds, joint confidence, smoothing…); the look has at most one or two options. Opacity and blend live in Layers.
+
+- **Transform** — Orbit (pixels back in 3D, camera turned around them) · Scan (lines lifted by depth) · Depth sort (pixel sort inside a depth slice) · Lens (depth of field) · Relight (light on the depth normals) · Depth map · Normal map · Mesh (face landmarks triangulated) · Warp (liquify from the landmarks) · Smear (limbs dragged along their bones) · Sort (pixel sort on the subject or the background) · Matte · Isolate (keep one dominant colour) · Swap (dominant colours exchanged).
+- **Add** — Slices (depth contour lines) · Echo (rings around the subject) · Graph (people linked to their nearest neighbours, with distances) · Face outline · Skeleton · Caption · Frame.
 
 Exports JPEG or PNG, no EXIF.
 
