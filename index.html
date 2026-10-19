@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610191650">
+<meta name="build" content="202610191700">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -80,10 +80,9 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 .panel .menu .chev{color:var(--muted);width:16px;letter-spacing:0}
 .panel .menu .hint{margin-left:auto;color:var(--muted);font-size:11px}
 .panel .val{height:64px;display:flex;align-items:center;justify-content:center;gap:16px;font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;cursor:ew-resize}
-.panel .val{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;cursor:pointer;color:var(--muted)}
-.panel .val i{font-style:normal;font-size:13px;font-weight:700}
-.panel .val.on{color:var(--fg)}
-.panel .val.on i{background:var(--fg);color:var(--on);padding:4px 8px}
+.panel .val{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer}
+.panel .val i{font-style:normal;font-size:12px;color:var(--muted);font-weight:400}
+.panel .val.on{box-shadow:inset 0 -2px 0 var(--fg)}
 
 .bottom{display:grid;grid-template-columns:repeat(4,1fr);height:48px;background:var(--panel);border-top:1px solid var(--bg);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:content-box}
 .bottom button{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
@@ -787,10 +786,10 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   function panel() {
     const o = opt();
     $('optName').textContent = o.label;
-    $('optHint').textContent = o.xy ? `X ${norm(edit.v[o.a.k])} · Y ${norm(edit.v[o.b.k])}` : o.desc ? o.desc(edit.v[o.k]) : norm(edit.v[o.k]);
-    $('optVal').innerHTML = `<span>Show controller</span><i>${gridOn ? 'On' : 'Off'}</i>`;
+    $('optHint').textContent = o.xy ? `${o.a.label} × ${o.b.label}` : o.desc ? o.desc(edit.v[o.k]) : `${edit.i + 1}/${FX[edit.k].opts.length}`;
+    $('optVal').innerHTML = o.xy ? `<i>X</i><span>${norm(edit.v[o.a.k])}</span><i>Y</i><span>${norm(edit.v[o.b.k])}</span>` : `<span>${norm(edit.v[o.k])}</span>`;
     $('optVal').classList.toggle('on', gridOn);
-    if (!$('pad').hidden) drawPad();
+    if (gridOn) showPad(); else if (!$('pad').hidden) drawPad();
   }
   function openDrawer(name) { drawer = drawer === name ? null : name; hideWheel(); ui(); if (drawer === 'Export') prepare(); if (drawer === 'Layers') layersUI(); }
   // ---------- layers ----------
@@ -968,7 +967,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     const o = opt(), B = padBox();
     setXY(o, o.a.min + clamp((cx - B.x) / B.w, 0, 1) * (o.a.max - o.a.min), o.b.min + clamp((B.y + B.h - cy) / B.h, 0, 1) * (o.b.max - o.b.min));
   }
-  let gridOn = (() => { try { return localStorage.getItem('tada-grid') !== '0'; } catch { return true; } })();
+  let gridOn = (() => { try { return localStorage.getItem('tada-grid') === '1'; } catch { return false; } })();   // locked = grid stays visible
   function ctlAt(cx, cy) {   // absolute: the whole photo area is the controller's range
     const o = opt();
     if (o.xy) return padAt(cx, cy);
@@ -1043,7 +1042,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       }
       if (where === 'photo' && !drawer) g.hold = setTimeout(() => {
         if (!g || g.moved || g.axis) return;
-        if (edit) { g.axis = 'ctl'; if (gridOn) showPad(); ctlAt(g.cx, g.cy); hap(); }
+        if (edit) { g.axis = 'ctl'; showPad(); ctlAt(g.cx, g.cy); hap(); }
         else { g.peek = true; peek(true); }
       }, 260);
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
@@ -1061,10 +1060,10 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     };
     const end = e => {
       if (!g || e.pointerId !== g.id) return;
-      hideWheel(); hidePad(); activity(); clearTimeout(g.hold);
+      hideWheel(); if (!gridOn) hidePad(); activity(); clearTimeout(g.hold);
       const tap = !g.moved && e.type === 'pointerup';
       if (g.peek) peek(false);
-      else if (g.axis === 'toggle' && tap) { gridOn = !gridOn; try { localStorage.setItem('tada-grid', gridOn ? '1' : '0'); } catch {} hap(); panel(); }
+      else if (g.axis === 'toggle' && tap) { gridOn = !gridOn; try { localStorage.setItem('tada-grid', gridOn ? '1' : '0'); } catch {} hap(); if (!gridOn) hidePad(); panel(); }
       else if (!g.axis && tap && g.where === 'photo') { if (drawer) openDrawer(drawer); else toggleFull(); }
       g = null;
     };
@@ -1141,7 +1140,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 
   const BUILD = document.querySelector('meta[name="build"]').content;
   // Version shown on the landing page and in Export. Bump VERSION by one at every published update.
-  const VERSION = 15;
+  const VERSION = 16;
   for (const id of ['ver1', 'ver2']) $(id).textContent = `v${VERSION}`;
   async function checkUpdate() {
     try {
