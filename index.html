@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610190350">
+<meta name="build" content="202610190400">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -80,11 +80,20 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 .panel .val{height:64px;display:flex;align-items:center;justify-content:center;gap:24px;font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;cursor:ew-resize}
 .panel .val i{font-style:normal;font-size:14px;color:var(--muted);font-weight:400}
 
-.bottom{display:grid;grid-template-columns:repeat(3,1fr);height:48px;background:var(--panel);border-top:1px solid var(--bg);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:content-box}
+.bottom{display:grid;grid-template-columns:repeat(4,1fr);height:48px;background:var(--panel);border-top:1px solid var(--bg);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:content-box}
 .bottom button{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .bottom button[aria-pressed="true"]{color:var(--fg);box-shadow:inset 0 2px 0 var(--fg)}
 .bottom.two{grid-template-columns:1fr 1fr}
 .bottom.two #done{background:var(--fg);color:var(--on);font-weight:700;letter-spacing:.1em}
+/* layers: top row = top layer. Mode: tap to cycle. Opacity: drag sideways. */
+.drawer .layers{display:grid;gap:8px}
+.drawer .layers .none{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;padding:12px 0}
+.drawer .lyr{display:grid;grid-template-columns:1fr 76px 48px 32px 32px 32px;gap:4px;height:48px;background:var(--bg);align-items:stretch}
+.drawer .lyr>*{display:flex;align-items:center;justify-content:center;font-size:12px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden}
+.drawer .lyr .nm{justify-content:flex-start;padding-left:12px;text-overflow:ellipsis}
+.drawer .lyr .md{background:var(--panel)}
+.drawer .lyr .op{background:var(--panel);font-weight:700;font-variant-numeric:tabular-nums;touch-action:none;cursor:ew-resize}
+.drawer .lyr button:disabled{opacity:.2}
 .full .top,.full .drawer,.full .panel,.full .bottom{display:none!important}
 </style>
 </head>
@@ -113,6 +122,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 
   <div class="drawer" id="drTransform" hidden><div class="grid"></div></div>
   <div class="drawer" id="drAdd" hidden><div class="grid"></div></div>
+  <div class="drawer" id="drLayers" hidden><div class="layers" id="layerList"></div></div>
   <div class="drawer" id="drExport" hidden>
     <div class="fmt"><button type="button" data-fmt="jpeg" aria-pressed="true">JPEG</button><button type="button" data-fmt="png" aria-pressed="false">PNG</button></div>
     <button type="button" class="go" id="save">Save</button>
@@ -129,6 +139,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
   <div class="bottom" id="bottom" hidden>
     <button type="button" data-dr="Transform">Transform</button>
     <button type="button" data-dr="Add">Add</button>
+    <button type="button" data-dr="Layers">Layers</button>
     <button type="button" data-dr="Export">Export</button>
   </div>
   <div class="bottom two" id="editBar" hidden>
@@ -538,8 +549,8 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   const saveParams = () => { try { localStorage.setItem('tada-params-1', JSON.stringify(params)); } catch {} };
   let params = loadParams(), stack = [], hist = [[]], hi = 0, edit = null, drawer = null, full = false;
 
-  function commit() { hist = hist.slice(0, hi + 1); hist.push(stack.map(e => ({ k: e.k, v: { ...e.v } }))); hi = hist.length - 1; ui(); }
-  function restore() { stack = hist[hi].map(e => ({ k: e.k, v: { ...e.v } })); renderStack(); ui(); }
+  function commit() { hist = hist.slice(0, hi + 1); hist.push(stack.map(e => ({ ...e, v: { ...e.v } }))); hi = hist.length - 1; ui(); }
+  function restore() { stack = hist[hi].map(e => ({ ...e, v: { ...e.v } })); renderStack(); ui(); if (drawer === 'Layers') layersUI(); }
 
   // ================= rendering =================
   function renderStack() {
@@ -547,7 +558,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     comp.width = base.width; comp.height = base.height;
     const ctx = comp.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(base, 0, 0);
-    for (const e of stack) if (FX[e.k].needs.every(n => L[n])) FX[e.k].run(ctx, e.v, false);
+    for (const e of stack) if (FX[e.k].needs.every(n => L[n])) apply(ctx, comp, e, false);
     compVersion++; render();
   }
   let pending = 0;
@@ -557,7 +568,19 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     if (out.width !== base.width || out.height !== base.height) { out.width = base.width; out.height = base.height; fit(); }
     const ctx = out.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(comp, 0, 0);
-    if (edit) FX[edit.k].run(ctx, edit.v, true);
+    if (edit) apply(ctx, comp, { k: edit.k, v: edit.v, mode: 'source-over', op: 100 }, true);
+  }
+  // One effect = one layer: a Transform starts from what is below it, an Add starts empty; the layer is then
+  // composited with its blend mode and opacity.
+  const layerCv = document.createElement('canvas');
+  function apply(ctx, below, e, live) {
+    layerCv.width = below.width; layerCv.height = below.height;
+    const lc = layerCv.getContext('2d', { willReadFrequently: true });
+    lc.clearRect(0, 0, layerCv.width, layerCv.height);
+    if (FX[e.k].kind === 'T') lc.drawImage(below, 0, 0);
+    FX[e.k].run(lc, e.v, live);
+    ctx.save(); ctx.globalCompositeOperation = e.mode || 'source-over'; ctx.globalAlpha = (e.op ?? 100) / 100;
+    ctx.drawImage(layerCv, 0, 0); ctx.restore();
   }
   function peek(on) { if (!base.width) return; if (on) out.getContext('2d').drawImage(base, 0, 0); else render(); }
   function fit() {
@@ -574,7 +597,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     for (const id of ['title', 'optReset', 'panel', 'editBar']) $(id).hidden = !ed;
     $('count').hidden = ed || !stack.length; $('count').textContent = stack.length + (stack.length > 1 ? ' fx' : ' fx');
     $('undo').disabled = hi <= 0; $('redo').disabled = hi >= hist.length - 1; $('reset').disabled = !stack.length;
-    for (const n of ['Transform', 'Add', 'Export']) $('dr' + n).hidden = drawer !== n || ed;
+    for (const n of ['Transform', 'Add', 'Layers', 'Export']) $('dr' + n).hidden = drawer !== n || ed;
     for (const b of document.querySelectorAll('#bottom button')) b.setAttribute('aria-pressed', b.dataset.dr === drawer);
     if (ed) { $('title').textContent = FX[edit.k].label; panel(); }
     activity();
@@ -585,7 +608,39 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     $('optName').textContent = o.label; $('optHint').textContent = `${edit.i + 1}/${FX[edit.k].opts.length}`;
     $('optVal').innerHTML = `<i>${o.min}</i><span>${v > 0 && o.min < 0 ? '+' : ''}${v}</span><i>${o.max}</i>`;
   }
-  function openDrawer(name) { drawer = drawer === name ? null : name; hideWheel(); ui(); if (drawer === 'Export') prepare(); }
+  function openDrawer(name) { drawer = drawer === name ? null : name; hideWheel(); ui(); if (drawer === 'Export') prepare(); if (drawer === 'Layers') layersUI(); }
+  // ---------- layers ----------
+  const MODES = [['source-over', 'Normal'], ['multiply', 'Multiply'], ['screen', 'Screen'], ['overlay', 'Overlay'], ['darken', 'Darken'], ['lighten', 'Lighten'],
+    ['color-dodge', 'Dodge'], ['color-burn', 'Burn'], ['hard-light', 'Hard'], ['soft-light', 'Soft'], ['difference', 'Diff'], ['exclusion', 'Exclude'],
+    ['hue', 'Hue'], ['saturation', 'Satur.'], ['color', 'Colour'], ['luminosity', 'Lumin.']];
+  const modeName = m => (MODES.find(x => x[0] === m) || MODES[0])[1];
+  function layersUI() {
+    const list = $('layerList'); list.textContent = '';
+    if (!stack.length) { list.innerHTML = '<div class="none">No effects yet</div>'; return; }
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const e = stack[i], row = document.createElement('div'); row.className = 'lyr';
+      row.innerHTML = `<span class="nm">${FX[e.k].label}</span><button type="button" class="md">${modeName(e.mode)}</button><span class="op">${e.op ?? 100}</span>` +
+        `<button type="button" class="up" ${i === stack.length - 1 ? 'disabled' : ''}>↑</button><button type="button" class="dn" ${i === 0 ? 'disabled' : ''}>↓</button><button type="button" class="rm">×</button>`;
+      const q = s => row.querySelector(s);
+      q('.md').addEventListener('click', () => { const j = MODES.findIndex(x => x[0] === (e.mode || 'source-over')); e.mode = MODES[(j + 1) % MODES.length][0]; hap(); changed(); });
+      q('.up').addEventListener('click', () => { [stack[i], stack[i + 1]] = [stack[i + 1], stack[i]]; hap(); changed(); });
+      q('.dn').addEventListener('click', () => { [stack[i], stack[i - 1]] = [stack[i - 1], stack[i]]; hap(); changed(); });
+      q('.rm').addEventListener('click', () => { stack.splice(i, 1); hap(); changed(); });
+      const op = q('.op'); let d = null;
+      op.addEventListener('pointerdown', ev => { ev.preventDefault(); op.setPointerCapture(ev.pointerId); d = { x: ev.clientX, v: e.op ?? 100, id: ev.pointerId }; });
+      op.addEventListener('pointermove', ev => {
+        if (!d || ev.pointerId !== d.id) return;
+        const v = Math.round(clamp(d.v + (ev.clientX - d.x) / 2, 0, 100));
+        if (v !== (e.op ?? 100)) { e.op = v; op.textContent = v; if (v % 5 === 0) hap(); scheduleStack(); }
+      });
+      const up = ev => { if (!d || ev.pointerId !== d.id) return; const moved = (e.op ?? 100) !== d.v; d = null; if (moved) { renderStack(); commit(); } };
+      op.addEventListener('pointerup', up); op.addEventListener('pointercancel', up);
+      list.append(row);
+    }
+  }
+  function changed() { renderStack(); commit(); layersUI(); }
+  let pendingStack = 0;
+  const scheduleStack = () => { if (!pendingStack) pendingStack = requestAnimationFrame(() => { pendingStack = 0; renderStack(); }); };
   function buildDrawers() {
     for (const [id, kind] of [['drTransform', 'T'], ['drAdd', 'A']]) {
       const g = $(id).querySelector('.grid');
@@ -604,7 +659,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   }
   function exitEdit(ok) {
     if (!edit) return;
-    if (ok) { params[edit.k] = { ...edit.v }; saveParams(); stack.push({ k: edit.k, v: { ...edit.v } }); edit = null; renderStack(); commit(); }
+    if (ok) { params[edit.k] = { ...edit.v }; saveParams(); stack.push({ k: edit.k, v: { ...edit.v }, mode: 'source-over', op: 100 }); edit = null; renderStack(); commit(); }
     else { edit = null; render(); ui(); }
   }
   function flashTitle(msg) { const c = $('count'); c.hidden = false; c.textContent = msg; clearTimeout(flashTitle.t); flashTitle.t = setTimeout(ui, 2500); }
@@ -758,7 +813,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   $('file').addEventListener('change', e => { if (e.target.files[0]) process(e.target.files[0]); });
   $('undo').addEventListener('click', () => { if (hi > 0) { hi--; restore(); } });
   $('redo').addEventListener('click', () => { if (hi < hist.length - 1) { hi++; restore(); } });
-  $('reset').addEventListener('click', () => { if (!stack.length) return; stack = []; renderStack(); commit(); });
+  $('reset').addEventListener('click', () => { if (!stack.length) return; stack = []; renderStack(); commit(); if (drawer === 'Layers') layersUI(); });
   $('optReset').addEventListener('click', () => { if (!edit) return; edit.v = defaults(FX[edit.k]); hap(); panel(); render(); });
   $('cancel').addEventListener('click', () => exitEdit(false));
   $('done').addEventListener('click', () => exitEdit(true));

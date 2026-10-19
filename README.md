@@ -10,7 +10,7 @@ Sister project of [Notus](https://github.com/kamyukami/notus): same screen, same
 
 - **Transform** (rewrites the pixels) · **Add** (draws on top) · **Export**: each opens a drawer; pick an effect.
 - The drawer closes and the bar becomes **Cancel / Done**. Drag vertically to pick an option, horizontally to set it (0…100, or −100…100). Double tap the value: default. Reset (top): all defaults.
-- **Done** stacks the effect. Effects stack in order, without masks; every analysis always runs on the original photo. Undo / redo / Reset at the top.
+- **Done** stacks the effect as a layer. **Layers**: reorder (↑ ↓), blend mode (tap to cycle), opacity (drag sideways), delete (×). Effects stack in order, without masks; every analysis always runs on the original photo. Undo / redo / Reset at the top.
 - Tap the photo: full screen (pinch to zoom). Long press: the original.
 
 ## Analyses
