@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610191910">
+<meta name="build" content="202610192245">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -40,6 +40,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 
 .photo{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;padding:8px;touch-action:none;overflow:hidden}
 .photo canvas{display:block;transform-origin:center;will-change:transform}
+#dbg{position:fixed;left:0;top:0;z-index:100;margin:0;padding:6px 8px;max-width:100vw;background:rgba(17,17,17,.85);color:#9f9;font:10px/1.3 ui-monospace,monospace;pointer-events:none;white-space:pre-wrap}
 .photo #pad{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
 .empty{display:grid;gap:16px;justify-items:center;text-align:center;padding:16px}
 .empty .pick{display:flex;align-items:center;justify-content:center;width:min(80vw,320px);height:64px;background:var(--fg);color:var(--on);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;cursor:pointer}
@@ -80,9 +81,8 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 .panel .menu .chev{color:var(--muted);width:16px;letter-spacing:0}
 .panel .menu .hint{margin-left:auto;color:var(--muted);font-size:11px}
 .panel .val{height:64px;display:flex;align-items:center;justify-content:center;gap:16px;font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;cursor:ew-resize}
-.panel .val{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer}
-.panel .val i{font-style:normal;font-size:12px;color:var(--muted);font-weight:400}
-.panel .val.on{box-shadow:inset 0 -2px 0 var(--fg)}
+.panel .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.panel .val i{font-style:normal;font-size:11px;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:.06em;text-align:right;max-width:9em}
 
 .bottom{display:grid;grid-template-columns:repeat(4,1fr);height:48px;background:var(--panel);border-top:1px solid var(--bg);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:content-box}
 .bottom button{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
@@ -123,6 +123,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
     </div>
     <canvas id="view" hidden></canvas>
     <canvas id="pad" hidden></canvas>
+    <pre id="dbg" hidden></pre>
     <div class="tip" id="tip">Hold the photo to adjust</div>
   </div>
 
@@ -159,6 +160,10 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 (() => {
   const $ = id => document.getElementById(id);
+  // ?debug: pointer events, hold, errors and render times, on screen (for phones without a console).
+  const DEBUG = /debug/.test(location.search), dbgLines = [];
+  const dbg = (...a) => { if (!DEBUG) return; dbgLines.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')); if (dbgLines.length > 14) dbgLines.shift(); $('dbg').textContent = dbgLines.join('\n'); };
+  if (DEBUG) { $('dbg').hidden = false; dbg('UA', navigator.userAgent.slice(0, 90)); addEventListener('error', e => dbg('ERR', e.message)); addEventListener('unhandledrejection', e => dbg('REJ', e.reason && e.reason.message || e.reason)); }
   const base = document.createElement('canvas');   // the photo, at most 1600 px — every analysis runs on it, never on the effects
   const comp = document.createElement('canvas');   // base + the validated effects
   const out  = $('view');                          // comp + the effect being edited
@@ -732,6 +737,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   const schedule = () => { if (!pending) pending = requestAnimationFrame(() => { pending = 0; render(); }); };
   function render() {
     if (!base.width) return;
+    const t0 = DEBUG && performance.now();
     if (out.width !== base.width || out.height !== base.height) { out.width = base.width; out.height = base.height; fit(); }
     const ctx = out.getContext('2d', { willReadFrequently: true });
     if (!edit) { ctx.drawImage(comp, 0, 0); return; }
@@ -740,6 +746,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     const own = stack[edit.at];
     apply(ctx, belowCv, { k: edit.k, v: edit.v, mode: own && edit.existing ? own.mode : 'source-over', op: own && edit.existing ? own.op : 100 }, true);
     for (const e of stack.slice(edit.at + (edit.existing ? 1 : 0))) if (FX[e.k].needs.every(n => L[n])) apply(ctx, out, e, false);
+    if (DEBUG) dbg('render', edit.k, (performance.now() - t0) | 0, 'ms', JSON.stringify(edit.v).slice(0, 60));
   }
   const belowCv = document.createElement('canvas');
   function buildBelow(at) {
@@ -767,7 +774,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     const a = $('photoArea'), W = a.clientWidth - 12, H = a.clientHeight - 12, k = Math.min(W / out.width, H / out.height);
     out.style.width = Math.floor(out.width * k) + 'px'; out.style.height = Math.floor(out.height * k) + 'px';
   }
-  new ResizeObserver(() => { fit(); if (!$('pad').hidden) drawPad(); }).observe($('photoArea'));
+  new ResizeObserver(fit).observe($('photoArea'));
 
   // ================= screen =================
   function ui() {
@@ -786,11 +793,10 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   const norm = v => (v < 0 ? '−' : '') + (Math.abs(v) / 100).toFixed(2);
   function panel() {
     const o = opt();
-    $('optName').textContent = o.label;
-    $('optHint').textContent = o.xy ? `${o.a.label} × ${o.b.label}` : o.desc ? o.desc(edit.v[o.k]) : `${edit.i + 1}/${FX[edit.k].opts.length}`;
-    $('optVal').innerHTML = o.xy ? `<i>X</i><span>${norm(edit.v[o.a.k])}</span><i>Y</i><span>${norm(edit.v[o.b.k])}</span>` : `<span>${norm(edit.v[o.k])}</span>`;
-    $('optVal').classList.toggle('on', gridOn);
-    if (gridOn) showPad(); else if (!$('pad').hidden) drawPad();
+    $('optName').textContent = o.label; $('optHint').textContent = `${edit.i + 1}/${FX[edit.k].opts.length}`;
+    $('optVal').innerHTML = o.xy
+      ? `<i>${o.a.label} ↔</i><span>${norm(edit.v[o.a.k])}</span><i>${o.b.label} ↕</i><span>${norm(edit.v[o.b.k])}</span>`
+      : `<i>${o.desc ? '' : '↔'}</i><span>${o.desc ? o.desc(edit.v[o.k]) : norm(edit.v[o.k])}</span>`;
   }
   function openDrawer(name) { drawer = drawer === name ? null : name; hideWheel(); ui(); if (drawer === 'Export') prepare(); if (drawer === 'Layers') layersUI(); }
   // ---------- layers ----------
@@ -955,59 +961,45 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   // ---------- 2D pad ----------
   // A see-through grid over the photo: X left → right, Y bottom → top, both absolute over the whole range;
   // axes through zero when a range has negatives; values shown normalized (0…1 or −1…1).
-  const PAD = 28;
+  const PAD = 24;   // margin: the full range is reachable without touching the photo's edge
   function padBox() { const r = $('photoArea').getBoundingClientRect(); return { x: r.left + PAD, y: r.top + PAD, w: r.width - PAD * 2, h: r.height - PAD * 2 }; }
   function setXY(o, x, y) {
     const a = Math.round(clamp(x, o.a.min, o.a.max)), b = Math.round(clamp(y, o.b.min, o.b.max));
     if (a === edit.v[o.a.k] && b === edit.v[o.b.k]) return;
     const step = (p, q) => Math.floor(p / 10) !== Math.floor(q / 10);
     if (step(a, edit.v[o.a.k]) || step(b, edit.v[o.b.k])) hap();
-    edit.v[o.a.k] = a; edit.v[o.b.k] = b; panel(); schedule(); if (!$('pad').hidden) drawPad();
+    edit.v[o.a.k] = a; edit.v[o.b.k] = b; panel(); schedule();
   }
   function padAt(cx, cy) {
     const o = opt(), B = padBox();
     setXY(o, o.a.min + clamp((cx - B.x) / B.w, 0, 1) * (o.a.max - o.a.min), o.b.min + clamp((B.y + B.h - cy) / B.h, 0, 1) * (o.b.max - o.b.min));
   }
-  let gridOn = (() => { try { return localStorage.getItem('tada-grid') === '1'; } catch { return false; } })();   // locked = grid stays visible
   function ctlAt(cx, cy) {   // absolute: the whole photo area is the controller's range
-    const o = opt();
+    const o = opt(); dbg('ctl', o.k, cx | 0, cy | 0);
     if (o.xy) return padAt(cx, cy);
     const B = padBox(), v = Math.round(o.min + clamp((cx - B.x) / B.w, 0, 1) * (o.max - o.min));
     if (v === edit.v[o.k]) return;
     if (Math.floor(v / 10) !== Math.floor(edit.v[o.k] / 10) || v === 0) hap();
     edit.v[o.k] = v; panel(); schedule();
   }
-  function showPad() { $('pad').hidden = false; drawPad(); }
+  function showPad() { $('pad').hidden = false; }
   function hidePad() { $('pad').hidden = true; }
-  function drawPad() {
-    const c = $('pad'), a = $('photoArea'), dpr = devicePixelRatio || 1, W = a.clientWidth, H = a.clientHeight;
+  // While adjusting: a small dot under the finger, so the move on the photo reads as a control move.
+  function drawDot(cx, cy) {
+    const c = $('pad'), a = $('photoArea'), r = a.getBoundingClientRect(), dpr = devicePixelRatio || 1, W = a.clientWidth, H = a.clientHeight;
     if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
-    const ctx = c.getContext('2d'), o = opt(), x0 = PAD, y0 = PAD, w = W - PAD * 2, h = H - PAD * 2;
-    if (!o.xy) return drawAxis(ctx, c, dpr, W, H, o, x0, y0, w, h);
-    const X = v => x0 + (v - o.a.min) / (o.a.max - o.a.min) * w, Y = v => y0 + h - (v - o.b.min) / (o.b.max - o.b.min) * h;
+    const ctx = c.getContext('2d'), x = cx - r.left, y = cy - r.top;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(242,242,242,.35)'; ctx.lineWidth = 1;
-    for (let k = 0; k <= 10; k++) {
-      const gx = x0 + w * k / 10 + .5, gy = y0 + h * k / 10 + .5;
-      ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + h); ctx.moveTo(x0, gy); ctx.lineTo(x0 + w, gy); ctx.stroke();
-    }
-    // axes: through zero if the range crosses it, otherwise along the low edges
-    const ax = X(clamp(0, o.a.min, o.a.max)), ay = Y(clamp(0, o.b.min, o.b.max));
-    ctx.strokeStyle = 'rgba(242,242,242,.8)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(x0, ay); ctx.lineTo(x0 + w, ay); ctx.moveTo(ax, y0); ctx.lineTo(ax, y0 + h); ctx.stroke();
-    ctx.fillStyle = 'rgba(242,242,242,.9)'; ctx.font = `11px ${FONT}`; ctx.shadowColor = '#111'; ctx.shadowBlur = 4;
-    ctx.textBaseline = 'top'; ctx.textAlign = 'right'; ctx.fillText(`${o.a.label.toUpperCase()} → ${norm(o.a.max)}`, x0 + w, ay + 6);
-    if (o.a.min < 0) { ctx.textAlign = 'left'; ctx.fillText(norm(o.a.min), x0, ay + 6); }
-    ctx.textBaseline = 'bottom'; ctx.fillText(`↑ ${o.b.label.toUpperCase()} ${norm(o.b.max)}`, ax + 6, y0 - 4);
-    if (o.b.min < 0) { ctx.textBaseline = 'top'; ctx.fillText(norm(o.b.min), ax + 6, y0 + h + 4); }
-    // the point
-    const px = X(edit.v[o.a.k]), py = Y(edit.v[o.b.k]);
-    ctx.strokeStyle = 'rgba(242,242,242,.5)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(px, y0); ctx.lineTo(px, y0 + h); ctx.moveTo(x0, py); ctx.lineTo(x0 + w, py); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = '#f2f2f2'; ctx.fillRect(px - 8, py - 8, 16, 16); ctx.fillStyle = '#111'; ctx.fillRect(px - 4, py - 4, 8, 8);
-    ctx.fillStyle = '#f2f2f2'; ctx.font = `bold 13px ${FONT}`; ctx.textBaseline = 'bottom'; ctx.textAlign = px > x0 + w - 120 ? 'right' : 'left';
-    ctx.fillText(`${norm(edit.v[o.a.k])} · ${norm(edit.v[o.b.k])}`, px + (ctx.textAlign === 'right' ? -14 : 14), py - 10);
+    ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(242,242,242,.9)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(17,17,17,.35)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fillStyle = '#f2f2f2'; ctx.fill();
   }
+  // Edit mode:
+  //  · hold the photo (still for a moment) → the controller takes over: the finger sets the value(s) absolutely
+  //    (pair: X across, Y up; single option: X across). Nothing else on the photo moves values.
+  //  · the option row (title) is the only place to scroll through the options (vertical drag).
+  //  · the zone under it is an on/off switch that shows the controller over the photo (not needed to use it).
+  // Browse mode: hold = the original photo. Everywhere: tap the photo = full view (or closes an open drawer).
   // Edit mode:
   //  · hold the photo (still for a moment) → the controller takes over: the finger sets the value(s) absolutely
   //    (pair: X across, Y up; single option: X across). Nothing else on the photo moves values.
@@ -1032,6 +1024,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   function gestures() {
     let g = null;
     const begin = (e, where) => {
+      dbg('down', where, e.pointerType, e.pointerId, e.clientX | 0, e.clientY | 0, e.target.tagName, 'edit=' + !!edit, 'drawer=' + drawer, 'full=' + full);
       if (!base.width || full) return;
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       if (e.target.closest('button')) return;
@@ -1039,19 +1032,20 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       g = { x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, axis: null, where, id: e.pointerId, moved: false };
       if (where === 'panel' && edit) {
         if (e.target.closest('.menu')) { g.axis = 'y'; g.i0 = edit.i; showWheel(edit.i); }
-        else if (e.target.closest('.val')) g.axis = 'toggle';
       }
       if (where === 'photo' && !drawer) g.hold = setTimeout(() => {
+        dbg('hold', g ? 'moved=' + g.moved + ' axis=' + g.axis : 'g=null');
         if (!g || g.moved || g.axis) return;
-        if (edit) { g.axis = 'ctl'; showPad(); ctlAt(g.cx, g.cy); hap(); }
+        if (edit) { g.axis = 'ctl'; showPad(); drawDot(g.cx, g.cy); ctlAt(g.cx, g.cy); hap(); }
         else { g.peek = true; peek(true); }
       }, 260);
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     };
     const move = e => {
+      if (DEBUG && (!g || g.axis === 'ctl')) dbg('move', e.pointerId, e.clientX | 0, e.clientY | 0, g ? 'axis=' + g.axis + ' id=' + g.id : 'g=null');
       if (!g || e.pointerId !== g.id) return;
       g.cx = e.clientX; g.cy = e.clientY;
-      if (g.axis === 'ctl') { ctlAt(e.clientX, e.clientY); return; }
+      if (g.axis === 'ctl') { drawDot(e.clientX, e.clientY); ctlAt(e.clientX, e.clientY); return; }
       if (g.axis === 'y') {
         const n = FX[edit.k].opts.length, i = clamp(g.i0 - Math.round((e.clientY - g.y) / ROW), 0, n - 1);
         if (i !== edit.i) { edit.i = i; hap(); panel(); showWheel(i); }
@@ -1060,11 +1054,11 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 12) { g.moved = true; clearTimeout(g.hold); }
     };
     const end = e => {
+      dbg(e.type, e.pointerId, g ? 'axis=' + g.axis + ' moved=' + g.moved : 'g=null');
       if (!g || e.pointerId !== g.id) return;
-      hideWheel(); if (!gridOn) hidePad(); activity(); clearTimeout(g.hold);
+      hideWheel(); hidePad(); activity(); clearTimeout(g.hold);
       const tap = !g.moved && e.type === 'pointerup';
       if (g.peek) peek(false);
-      else if (g.axis === 'toggle' && tap) { gridOn = !gridOn; try { localStorage.setItem('tada-grid', gridOn ? '1' : '0'); } catch {} hap(); if (!gridOn) hidePad(); panel(); }
       else if (!g.axis && tap && g.where === 'photo') { if (drawer) openDrawer(drawer); else toggleFull(); }
       g = null;
     };
@@ -1142,7 +1136,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 
   const BUILD = document.querySelector('meta[name="build"]').content;
   // Version shown on the landing page and in Export. Bump VERSION by one at every published update.
-  const VERSION = 17;
+  const VERSION = 18;
   for (const id of ['ver1', 'ver2']) $(id).textContent = `v${VERSION}`;
   async function checkUpdate() {
     try {
