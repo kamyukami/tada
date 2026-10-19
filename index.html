@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610190400">
+<meta name="build" content="202610190410">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -91,7 +91,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 .drawer .lyr{display:grid;grid-template-columns:1fr 76px 48px 32px 32px 32px;gap:4px;height:48px;background:var(--bg);align-items:stretch}
 .drawer .lyr>*{display:flex;align-items:center;justify-content:center;font-size:12px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden}
 .drawer .lyr .nm{justify-content:flex-start;padding-left:12px;text-overflow:ellipsis}
-.drawer .lyr .md{background:var(--panel)}
+.drawer .lyr .md{background:var(--panel);touch-action:none;cursor:ns-resize}
 .drawer .lyr .op{background:var(--panel);font-weight:700;font-variant-numeric:tabular-nums;touch-action:none;cursor:ew-resize}
 .drawer .lyr button:disabled{opacity:.2}
 .full .top,.full .drawer,.full .panel,.full .bottom{display:none!important}
@@ -622,7 +622,24 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       row.innerHTML = `<span class="nm">${FX[e.k].label}</span><button type="button" class="md">${modeName(e.mode)}</button><span class="op">${e.op ?? 100}</span>` +
         `<button type="button" class="up" ${i === stack.length - 1 ? 'disabled' : ''}>↑</button><button type="button" class="dn" ${i === 0 ? 'disabled' : ''}>↓</button><button type="button" class="rm">×</button>`;
       const q = s => row.querySelector(s);
-      q('.md').addEventListener('click', () => { const j = MODES.findIndex(x => x[0] === (e.mode || 'source-over')); e.mode = MODES[(j + 1) % MODES.length][0]; hap(); changed(); });
+      // Blend mode: press shows the list of modes on the row, slide up/down through it (live), release keeps it. A plain tap = next mode.
+      const md = q('.md'); let w = null;
+      const mi = () => Math.max(0, MODES.findIndex(x => x[0] === (e.mode || 'source-over')));
+      md.addEventListener('pointerdown', ev => { ev.preventDefault(); md.setPointerCapture(ev.pointerId); w = { y: ev.clientY, i0: mi(), id: ev.pointerId, moved: false, m0: e.mode }; });
+      md.addEventListener('pointermove', ev => {
+        if (!w || ev.pointerId !== w.id) return;
+        const dy = ev.clientY - w.y; if (!w.moved && Math.abs(dy) < 6) return;
+        if (!w.moved) { w.moved = true; modeWheel(md, w.i0); }
+        const i = clamp(w.i0 - Math.round(dy / ROW), 0, MODES.length - 1);   // the list follows the finger
+        if (i !== mi()) { e.mode = MODES[i][0]; md.textContent = MODES[i][1]; hap(); modeWheel(md, i); scheduleStack(); }
+      });
+      const mup = ev => {
+        if (!w || ev.pointerId !== w.id) return;
+        const moved = w.moved, m0 = w.m0; w = null; hideWheel();
+        if (!moved && ev.type === 'pointerup') { e.mode = MODES[(mi() + 1) % MODES.length][0]; hap(); changed(); }
+        else if (e.mode !== m0) changed();
+      };
+      md.addEventListener('pointerup', mup); md.addEventListener('pointercancel', mup);
       q('.up').addEventListener('click', () => { [stack[i], stack[i + 1]] = [stack[i + 1], stack[i]]; hap(); changed(); });
       q('.dn').addEventListener('click', () => { [stack[i], stack[i - 1]] = [stack[i - 1], stack[i]]; hap(); changed(); });
       q('.rm').addEventListener('click', () => { stack.splice(i, 1); hap(); changed(); });
@@ -639,6 +656,15 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     }
   }
   function changed() { renderStack(); commit(); layersUI(); }
+  // The mode list, lined up on the pressed cell: the current mode sits on it, the others above and below (the list follows the finger).
+  function modeWheel(cell, i) {
+    const wh = $('wheel'), items = $('wheelItems'), r = cell.getBoundingClientRect();
+    items.textContent = '';
+    MODES.forEach((m, j) => { const d = document.createElement('div'); d.className = j === i ? 'cur' : ''; d.innerHTML = `<span>${m[1]}</span>`; items.append(d); });
+    wh.style.setProperty('--y', (r.top + (r.height - ROW) / 2 - i * ROW) + 'px');
+    const w = Math.max(160, r.width); wh.style.setProperty('--x', clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8) + 'px'); wh.style.setProperty('--w', w + 'px');
+    $('shade').hidden = false; wh.hidden = false;
+  }
   let pendingStack = 0;
   const scheduleStack = () => { if (!pendingStack) pendingStack = requestAnimationFrame(() => { pendingStack = 0; renderStack(); }); };
   function buildDrawers() {
