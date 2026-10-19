@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610190340">
+<meta name="build" content="202610190350">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -585,7 +585,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     $('optName').textContent = o.label; $('optHint').textContent = `${edit.i + 1}/${FX[edit.k].opts.length}`;
     $('optVal').innerHTML = `<i>${o.min}</i><span>${v > 0 && o.min < 0 ? '+' : ''}${v}</span><i>${o.max}</i>`;
   }
-  function openDrawer(name) { drawer = drawer === name ? null : name; hideWheel(); ui(); }
+  function openDrawer(name) { drawer = drawer === name ? null : name; hideWheel(); ui(); if (drawer === 'Export') prepare(); }
   function buildDrawers() {
     for (const [id, kind] of [['drTransform', 'T'], ['drAdd', 'A']]) {
       const g = $(id).querySelector('.grid');
@@ -766,14 +766,31 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   $('drExport').addEventListener('click', e => {
     const b = e.target.closest('[data-fmt]'); if (!b) return;
     fmt = b.dataset.fmt; for (const x of $('drExport').querySelectorAll('[data-fmt]')) x.setAttribute('aria-pressed', x.dataset.fmt === fmt);
+    prepare();
   });
+  // Save: the blob is prepared as soon as the Export drawer opens, so the tap on Save can open the share sheet
+  // right away (iOS needs it inside the tap) — the share sheet offers "Save Image", which goes to Photos.
+  // Without file sharing (desktop browsers): a plain download.
   const flash = msg => { const b = $('save'); b.textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { b.textContent = 'Save'; }, 1600); };
+  let ready = null;   // { key, file }
+  function prepare() {
+    const key = compVersion + '/' + fmt; if (ready && ready.key === key) return;
+    ready = { key, file: null };
+    comp.toBlob(b => { if (ready.key === key && b) ready.file = new File([b], `tada-${Date.now() % 1e6}.${fmt === 'png' ? 'png' : 'jpg'}`, { type: b.type }); },
+      fmt === 'png' ? 'image/png' : 'image/jpeg', 0.92);   // the stack only; canvas output never carries EXIF
+  }
   $('save').addEventListener('click', async () => {
-    const blob = await new Promise(r => comp.toBlob(r, fmt === 'png' ? 'image/png' : 'image/jpeg', 0.92));   // the stack only; never EXIF
-    const filename = `tada.${fmt === 'png' ? 'png' : 'jpg'}`;
+    prepare();
+    if (!ready.file) { flash('Preparing…'); return; }
+    const f = ready.file;
+    if (navigator.canShare && navigator.canShare({ files: [f] })) {
+      try { await navigator.share({ files: [f] }); flash('Done'); }
+      catch (e) { if (e.name !== 'AbortError') flash('Could not save'); }
+      return;
+    }
     const dl = window.claude ? await claude.use('downloads') : null;
-    if (dl) { try { await dl.save({ filename, data: blob }); flash('Saved'); } catch (e) { flash(e.code === 'declined' ? 'Cancelled' : 'Could not save'); } return; }
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+    if (dl) { try { await dl.save({ filename: f.name, data: f }); flash('Saved'); } catch (e) { flash(e.code === 'declined' ? 'Cancelled' : 'Could not save'); } return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name;
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   });
 
