@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610190410">
+<meta name="build" content="202610191400">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -90,7 +90,7 @@ button:focus-visible,.btn:focus-within{outline:2px solid var(--fg);outline-offse
 .drawer .layers .none{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;padding:12px 0}
 .drawer .lyr{display:grid;grid-template-columns:1fr 76px 48px 32px 32px 32px;gap:4px;height:48px;background:var(--bg);align-items:stretch}
 .drawer .lyr>*{display:flex;align-items:center;justify-content:center;font-size:12px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden}
-.drawer .lyr .nm{justify-content:flex-start;padding-left:12px;text-overflow:ellipsis}
+.drawer .lyr .nm{justify-content:flex-start;padding-left:12px;text-overflow:ellipsis;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--muted)}
 .drawer .lyr .md{background:var(--panel);touch-action:none;cursor:ns-resize}
 .drawer .lyr .op{background:var(--panel);font-weight:700;font-variant-numeric:tabular-nums;touch-action:none;cursor:ew-resize}
 .drawer .lyr button:disabled{opacity:.2}
@@ -567,8 +567,20 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     if (!base.width) return;
     if (out.width !== base.width || out.height !== base.height) { out.width = base.width; out.height = base.height; fit(); }
     const ctx = out.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(comp, 0, 0);
-    if (edit) apply(ctx, comp, { k: edit.k, v: edit.v, mode: 'source-over', op: 100 }, true);
+    if (!edit) { ctx.drawImage(comp, 0, 0); return; }
+    // Editing: the layers below (cached), the edited layer, then the layers above it, all live.
+    ctx.drawImage(belowCv, 0, 0);
+    const own = stack[edit.at];
+    apply(ctx, belowCv, { k: edit.k, v: edit.v, mode: own && edit.existing ? own.mode : 'source-over', op: own && edit.existing ? own.op : 100 }, true);
+    for (const e of stack.slice(edit.at + (edit.existing ? 1 : 0))) if (FX[e.k].needs.every(n => L[n])) apply(ctx, out, e, false);
+  }
+  const belowCv = document.createElement('canvas');
+  function buildBelow(at) {
+    belowCv.width = base.width; belowCv.height = base.height;
+    const ctx = belowCv.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(base, 0, 0);
+    for (const e of stack.slice(0, at)) if (FX[e.k].needs.every(n => L[n])) apply(ctx, belowCv, e, false);
+    compVersion++;
   }
   // One effect = one layer: a Transform starts from what is below it, an Add starts empty; the layer is then
   // composited with its blend mode and opacity.
@@ -622,6 +634,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       row.innerHTML = `<span class="nm">${FX[e.k].label}</span><button type="button" class="md">${modeName(e.mode)}</button><span class="op">${e.op ?? 100}</span>` +
         `<button type="button" class="up" ${i === stack.length - 1 ? 'disabled' : ''}>↑</button><button type="button" class="dn" ${i === 0 ? 'disabled' : ''}>↓</button><button type="button" class="rm">×</button>`;
       const q = s => row.querySelector(s);
+      q('.nm').addEventListener('click', () => enterEdit(e.k, i));
       // Blend mode: press shows the list of modes on the row, slide up/down through it (live), release keeps it. A plain tap = next mode.
       const md = q('.md'); let w = null;
       const mi = () => Math.max(0, MODES.findIndex(x => x[0] === (e.mode || 'source-over')));
@@ -677,16 +690,22 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       }
     }
   }
-  async function enterEdit(k) {
+  // New effect: goes on top. at = an index of the stack: reopen that layer, with the layers above still showing.
+  async function enterEdit(k, at) {
     drawer = null; ui();
     if (!(await ensure(FX[k].needs))) { $('pickMsg').textContent = ''; flashTitle(FX[k].label + ': analysis failed'); return; }
-    edit = { k, v: { ...defaults(FX[k]), ...(params[k] || {}) }, i: 0 };
-    ui(); render();
+    const existing = at !== undefined;
+    edit = { k, v: existing ? { ...defaults(FX[k]), ...stack[at].v } : { ...defaults(FX[k]), ...(params[k] || {}) }, i: 0, at: existing ? at : stack.length, existing };
+    buildBelow(edit.at); ui(); render();
   }
   function exitEdit(ok) {
     if (!edit) return;
-    if (ok) { params[edit.k] = { ...edit.v }; saveParams(); stack.push({ k: edit.k, v: { ...edit.v }, mode: 'source-over', op: 100 }); edit = null; renderStack(); commit(); }
-    else { edit = null; render(); ui(); }
+    if (ok) {
+      params[edit.k] = { ...edit.v }; saveParams();
+      if (edit.existing) stack[edit.at] = { ...stack[edit.at], v: { ...edit.v } };
+      else stack.push({ k: edit.k, v: { ...edit.v }, mode: 'source-over', op: 100 });
+      edit = null; renderStack(); commit();
+    } else { edit = null; render(); ui(); }
   }
   function flashTitle(msg) { const c = $('count'); c.hidden = false; c.textContent = msg; clearTimeout(flashTitle.t); flashTitle.t = setTimeout(ui, 2500); }
 
