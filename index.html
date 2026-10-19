@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610192245">
+<meta name="build" content="202610192250">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1033,16 +1033,17 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       if (where === 'panel' && edit) {
         if (e.target.closest('.menu')) { g.axis = 'y'; g.i0 = edit.i; showWheel(edit.i); }
       }
+      // The hold fires as long as the finger is still down, moving or not: a finger is never still.
       if (where === 'photo' && !drawer) g.hold = setTimeout(() => {
         dbg('hold', g ? 'moved=' + g.moved + ' axis=' + g.axis : 'g=null');
-        if (!g || g.moved || g.axis) return;
+        if (!g || g.axis) return;
         if (edit) { g.axis = 'ctl'; showPad(); drawDot(g.cx, g.cy); ctlAt(g.cx, g.cy); hap(); }
         else { g.peek = true; peek(true); }
-      }, 260);
+      }, 200);
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     };
     const move = e => {
-      if (DEBUG && (!g || g.axis === 'ctl')) dbg('move', e.pointerId, e.clientX | 0, e.clientY | 0, g ? 'axis=' + g.axis + ' id=' + g.id : 'g=null');
+      if (DEBUG) dbg('move', e.pointerId, e.clientX | 0, e.clientY | 0, g ? 'axis=' + g.axis + ' id=' + g.id : 'g=null');
       if (!g || e.pointerId !== g.id) return;
       g.cx = e.clientX; g.cy = e.clientY;
       if (g.axis === 'ctl') { drawDot(e.clientX, e.clientY); ctlAt(e.clientX, e.clientY); return; }
@@ -1051,7 +1052,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
         if (i !== edit.i) { edit.i = i; hap(); panel(); showWheel(i); }
         return;
       }
-      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 12) { g.moved = true; clearTimeout(g.hold); }
+      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 12) g.moved = true;
     };
     const end = e => {
       dbg(e.type, e.pointerId, g ? 'axis=' + g.axis + ' moved=' + g.moved : 'g=null');
@@ -1136,7 +1137,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 
   const BUILD = document.querySelector('meta[name="build"]').content;
   // Version shown on the landing page and in Export. Bump VERSION by one at every published update.
-  const VERSION = 18;
+  const VERSION = 19;
   for (const id of ['ver1', 'ver2']) $(id).textContent = `v${VERSION}`;
   async function checkUpdate() {
     try {
