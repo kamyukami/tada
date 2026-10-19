@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610191700">
+<meta name="build" content="202610191910">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -550,7 +550,8 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     async exif() { return file ? await readExif(file) : null; },
   };
   let L = {}, pend = {};
-  const analyse = name => pend[name] ||= (async () => { try { L[name] = await COMPUTE[name](); } catch (e) { console.error(name, e); L[name] = null; } })();
+  let failed = null, failMsg = '';
+  const analyse = name => pend[name] ||= (async () => { try { L[name] = await COMPUTE[name](); } catch (e) { console.error(name, e); L[name] = null; failed = NAMES[name]; failMsg = (e && e.message || String(e)).slice(0, 80); } })();
   async function ensure(names) {
     const todo = names.filter(n => !(n in L));
     if (todo.length) {
@@ -864,7 +865,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   // New effect: goes on top. at = an index of the stack: reopen that layer, with the layers above still showing.
   async function enterEdit(k, at) {
     drawer = null; ui();
-    if (!(await ensure(FX[k].needs))) { $('pickMsg').textContent = ''; flashTitle(FX[k].label + ': analysis failed'); return; }
+    if (!(await ensure(FX[k].needs))) { flashTitle((failed || 'analysis') + ' failed' + (failMsg ? ': ' + failMsg : ''), 8000); return; }
     const existing = at !== undefined;
     edit = { k, v: existing ? { ...defaults(FX[k]), ...stack[at].v } : { ...defaults(FX[k]), ...(params[k] || {}) }, i: 0, at: existing ? at : stack.length, existing };
     buildBelow(edit.at); ui(); render();
@@ -878,7 +879,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       edit = null; renderStack(); commit();
     } else { edit = null; render(); ui(); }
   }
-  function flashTitle(msg) { const c = $('count'); c.hidden = false; c.textContent = msg; clearTimeout(flashTitle.t); flashTitle.t = setTimeout(ui, 2500); }
+  function flashTitle(msg, ms = 2500) { const c = $('count'); c.hidden = false; c.textContent = msg; clearTimeout(flashTitle.t); flashTitle.t = setTimeout(ui, ms); }
 
   let idle = null;
   function activity() { $('tip').classList.remove('on'); clearTimeout(idle); if (edit && !full) idle = setTimeout(() => $('tip').classList.add('on'), 10000); }
@@ -1056,7 +1057,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
         if (i !== edit.i) { edit.i = i; hap(); panel(); showWheel(i); }
         return;
       }
-      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 8) { g.moved = true; clearTimeout(g.hold); }
+      if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 12) { g.moved = true; clearTimeout(g.hold); }
     };
     const end = e => {
       if (!g || e.pointerId !== g.id) return;
@@ -1098,6 +1099,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     $('file').value = '';
   }
 
+  document.addEventListener('contextmenu', e => e.preventDefault());   // a long press must never open a menu (Android)
   buildDrawers(); zoomGestures($('photoArea')); gestures(); ui();
   $('file').addEventListener('change', e => { if (e.target.files[0]) process(e.target.files[0]); });
   $('undo').addEventListener('click', () => { if (hi > 0) { hi--; restore(); } });
@@ -1140,7 +1142,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 
   const BUILD = document.querySelector('meta[name="build"]').content;
   // Version shown on the landing page and in Export. Bump VERSION by one at every published update.
-  const VERSION = 16;
+  const VERSION = 17;
   for (const id of ['ver1', 'ver2']) $(id).textContent = `v${VERSION}`;
   async function checkUpdate() {
     try {
