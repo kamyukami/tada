@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="build" content="202610191630">
+<meta name="build" content="202610191650">
 <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e4e4e4" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -788,9 +788,9 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     const o = opt();
     $('optName').textContent = o.label;
     $('optHint').textContent = o.xy ? `X ${norm(edit.v[o.a.k])} · Y ${norm(edit.v[o.b.k])}` : o.desc ? o.desc(edit.v[o.k]) : norm(edit.v[o.k]);
-    $('optVal').innerHTML = `<span>Controller</span><i>${gridOn ? 'On' : 'Off'}</i>`;
+    $('optVal').innerHTML = `<span>Show controller</span><i>${gridOn ? 'On' : 'Off'}</i>`;
     $('optVal').classList.toggle('on', gridOn);
-    $('pad').hidden = !gridOn; if (gridOn) drawPad();
+    if (!$('pad').hidden) drawPad();
   }
   function openDrawer(name) { drawer = drawer === name ? null : name; hideWheel(); ui(); if (drawer === 'Export') prepare(); if (drawer === 'Layers') layersUI(); }
   // ---------- layers ----------
@@ -986,8 +986,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     if (!o.xy) return drawAxis(ctx, c, dpr, W, H, o, x0, y0, w, h);
     const X = v => x0 + (v - o.a.min) / (o.a.max - o.a.min) * w, Y = v => y0 + h - (v - o.b.min) / (o.b.max - o.b.min) * h;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(17,17,17,.55)'; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(242,242,242,.18)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(242,242,242,.35)'; ctx.lineWidth = 1;
     for (let k = 0; k <= 10; k++) {
       const gx = x0 + w * k / 10 + .5, gy = y0 + h * k / 10 + .5;
       ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + h); ctx.moveTo(x0, gy); ctx.lineTo(x0 + w, gy); ctx.stroke();
@@ -996,11 +995,11 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     const ax = X(clamp(0, o.a.min, o.a.max)), ay = Y(clamp(0, o.b.min, o.b.max));
     ctx.strokeStyle = 'rgba(242,242,242,.8)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x0, ay); ctx.lineTo(x0 + w, ay); ctx.moveTo(ax, y0); ctx.lineTo(ax, y0 + h); ctx.stroke();
-    ctx.fillStyle = 'rgba(242,242,242,.9)'; ctx.font = `11px ${FONT}`;
+    ctx.fillStyle = 'rgba(242,242,242,.9)'; ctx.font = `11px ${FONT}`; ctx.shadowColor = '#111'; ctx.shadowBlur = 4;
     ctx.textBaseline = 'top'; ctx.textAlign = 'right'; ctx.fillText(`${o.a.label.toUpperCase()} → ${norm(o.a.max)}`, x0 + w, ay + 6);
-    ctx.textAlign = 'left'; ctx.fillText(norm(o.a.min), x0, ay + 6);
+    if (o.a.min < 0) { ctx.textAlign = 'left'; ctx.fillText(norm(o.a.min), x0, ay + 6); }
     ctx.textBaseline = 'bottom'; ctx.fillText(`↑ ${o.b.label.toUpperCase()} ${norm(o.b.max)}`, ax + 6, y0 - 4);
-    ctx.textBaseline = 'top'; ctx.fillText(norm(o.b.min), ax + 6, y0 + h + 4);
+    if (o.b.min < 0) { ctx.textBaseline = 'top'; ctx.fillText(norm(o.b.min), ax + 6, y0 + h + 4); }
     // the point
     const px = X(edit.v[o.a.k]), py = Y(edit.v[o.b.k]);
     ctx.strokeStyle = 'rgba(242,242,242,.5)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
@@ -1018,12 +1017,11 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
   function drawAxis(ctx, c, dpr, W, H, o, x0, y0, w, h) {   // single option: one horizontal axis across the photo
     const X = v => x0 + (v - o.min) / (o.max - o.min) * w, my = y0 + h / 2, v = edit.v[o.k];
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(17,17,17,.55)'; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(242,242,242,.18)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(242,242,242,.35)'; ctx.lineWidth = 1;
     for (let k = 0; k <= 10; k++) { const gx = x0 + w * k / 10 + .5; ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + h); ctx.stroke(); }
     ctx.strokeStyle = 'rgba(242,242,242,.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, my); ctx.lineTo(x0 + w, my);
     if (o.min < 0) { ctx.moveTo(X(0), my - 12); ctx.lineTo(X(0), my + 12); } ctx.stroke();
-    ctx.fillStyle = 'rgba(242,242,242,.9)'; ctx.font = `11px ${FONT}`; ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(242,242,242,.9)'; ctx.font = `11px ${FONT}`; ctx.shadowColor = '#111'; ctx.shadowBlur = 4; ctx.textBaseline = 'top';
     ctx.textAlign = 'left'; ctx.fillText(norm(o.min), x0, my + 8); ctx.textAlign = 'right'; ctx.fillText(`${o.label.toUpperCase()} → ${norm(o.max)}`, x0 + w, my + 8);
     const px = X(v);
     ctx.strokeStyle = 'rgba(242,242,242,.5)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(px, y0); ctx.lineTo(px, y0 + h); ctx.stroke(); ctx.setLineDash([]);
@@ -1045,7 +1043,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
       }
       if (where === 'photo' && !drawer) g.hold = setTimeout(() => {
         if (!g || g.moved || g.axis) return;
-        if (edit) { g.axis = 'ctl'; ctlAt(g.cx, g.cy); hap(); }
+        if (edit) { g.axis = 'ctl'; if (gridOn) showPad(); ctlAt(g.cx, g.cy); hap(); }
         else { g.peek = true; peek(true); }
       }, 260);
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
@@ -1063,7 +1061,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
     };
     const end = e => {
       if (!g || e.pointerId !== g.id) return;
-      hideWheel(); activity(); clearTimeout(g.hold);
+      hideWheel(); hidePad(); activity(); clearTimeout(g.hold);
       const tap = !g.moved && e.type === 'pointerup';
       if (g.peek) peek(false);
       else if (g.axis === 'toggle' && tap) { gridOn = !gridOn; try { localStorage.setItem('tada-grid', gridOn ? '1' : '0'); } catch {} hap(); panel(); }
@@ -1143,7 +1141,7 @@ import * as ort from './vendor/ort.wasm.bundle.min.mjs';
 
   const BUILD = document.querySelector('meta[name="build"]').content;
   // Version shown on the landing page and in Export. Bump VERSION by one at every published update.
-  const VERSION = 14;
+  const VERSION = 15;
   for (const id of ['ver1', 'ver2']) $(id).textContent = `v${VERSION}`;
   async function checkUpdate() {
     try {
